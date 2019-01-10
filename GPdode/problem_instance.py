@@ -31,7 +31,7 @@ class ProblemInstance (Model):
 		# Divergence term
 		D  = 0.
 		# Constraint violation term
-		C  = 0.
+		#C  = 0.
 		# Means and variances of predicted states and observations 
 		mX = [ model.x0.astype(np.float) for model in self.models ]
 		sX = [ model.P0.astype(np.float) for model in self.models ]
@@ -45,24 +45,8 @@ class ProblemInstance (Model):
 				mX[i],sX[i] = model._build_predict_x_dist(mX[i],sX[i], u)[:2]
 				mY[i],sY[i] = model._build_predict_y_dist(mX[i],sX[i])
 			D += self.divergence( mY, sY )
-		return C - D
-
-	def _divergence_objective (self, M, S):
-		D = 0
-		for i in range( self.num_models ):
-			mi = M[i][:,None]
-			Si = S[i]
-			for j in range( i+1, self.num_models ):
-				mj = M[j][:,None]
-				Sj = S[j]
-				if self.divergence is None:
-					mij = mi - mj
-					Sij = tf.linalg.inv( Si + Sj )
-					D  += tf.matmul(mij, tf.matmul(Sij, mij), transpose_a=True)
-				else:
-					D  += self.divergence( mi, Si, mj, Sj )
-		return D
-
+		#return C - D
+		return -D
 
 	@autoflow()
 	def get_U (self):
