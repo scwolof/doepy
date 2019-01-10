@@ -162,7 +162,7 @@ class GPModel (GPflowModel, Model):
 		V_k  = V[:self.D]
 		if self.delta_transition:
 			mu_k += xk
-			S_k  += Pk + V_k + V_k.T
+			S_k  += Pk + V_k + tf.transpose(V_k)
 			V_k  += Pk
 		return mu_k, S_k, V_k
 	
