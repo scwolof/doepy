@@ -9,13 +9,15 @@ from gpflow.decors import name_scope, params_as_tensors, autoflow
 from gpflow.params import Parameterized, ParamList
 from gpflow.transforms import Logistic
 
+from .design_criteria import HR
+
 class ProblemInstance (Model):
 	def __init__ (self, models, num_steps, u_bounds, div_criterion=None):
 		Model.__init__(self, name='problem')
 		self.models     = models
 		self.num_models = len(models)
 		self.num_steps  = num_steps
-		self.divergence = div_criterion
+		self.divergence = div_criterion or HR()
 
 		self.Du = len(u_bounds)
 		self.U = ParamList([ Param(np.array([np.mean(ub)]*num_steps), 
@@ -42,7 +44,7 @@ class ProblemInstance (Model):
 			for i, model in enumerate( self.models ):
 				mX[i],sX[i] = model._build_predict_x_dist(mX[i],sX[i], u)[:2]
 				mY[i],sY[i] = model._build_predict_y_dist(mX[i],sX[i])
-			D += self._divergence_objective( mY, sY )
+			D += self.divergence( mY, sY )
 		return C - D
 
 	def _divergence_objective (self, M, S):
