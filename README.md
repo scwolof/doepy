@@ -3,10 +3,10 @@ Design of dynamic experiments using GP surrogates
 
 Currently implements:
 * State uncertainty
+* Some control input uncertainty
 
 Does not implement:
 * Model parameter uncertainty
-* Control input uncertainty
 * State constraints
 * Delta constraints on control input
 
