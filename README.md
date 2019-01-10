@@ -1,2 +1,21 @@
 # GPdode
 Design of dynamic experiments using GP surrogates
+
+Currently implements:
+* State uncertainty
+
+Does not implement:
+* Model parameter uncertainty
+* Control input uncertainty
+* State constraints
+* Delta constraints on control input
+
+
+## Authors
+* **[Simon Olofsson](https://www.doc.ic.ac.uk/~so2015/)** ([scwolof](https://github.com/scwolof)) - Imperial College London
+
+## License
+The GPdode package is released under the MIT License. Please refer to the [LICENSE](https://github.com/scwolof/GPdode/blob/master/LICENSE) file for details.
+
+## Acknowledgements
+This work has received funding from the European Union's Horizon 2020 research and innovation programme under the Marie Skłodowska-Curie grant agreement no.675251.
