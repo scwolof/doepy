@@ -8,7 +8,7 @@ class Model (GPModel):
 	def __init__ (self, F, B, H, Q, R, name):
 		f   = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
 		X,Y = self.training_grid(f)
-		super(Model, self).__init__(f, X, Y, H, Q, R, name=name)
+		super(Model, self).__init__(f, X, Y, H, Q, R, name=name, delta_transition=True)
 
 		self.X_constraints = [ Box(-0.25, 0.25), Box(0, 1) ]
 

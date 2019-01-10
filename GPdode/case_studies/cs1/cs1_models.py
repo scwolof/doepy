@@ -6,7 +6,7 @@ from ...constraints import Box
 
 class Model (LinearModel):
 	def __init__ (self, F, B, H, Q, R, name):
-		super(Model, self).__init__(F, B, H, Q, R, name=name, delta_transition=True)
+		super(Model, self).__init__(F, B, H, Q, R, name=name)
 
 		#self.X_constraints = [ Box(-0.25, 0.25), Box(0, 1) ]
 		self.X_constraints = np.array([[-0.25, 0.25],
