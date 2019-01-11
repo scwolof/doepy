@@ -95,8 +95,8 @@ class Model:
 			return self._predict(x0, U)
 
 		n = len(U)
-		X = zeros(( n+1, self.D ))
-		Y = zeros((   n, self.E ))
+		X = np.zeros(( n+1, self.D ))
+		Y = np.zeros((   n, self.E ))
 
 		X[0] = x0
 		for k in range(n):
