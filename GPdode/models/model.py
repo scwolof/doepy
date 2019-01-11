@@ -8,6 +8,7 @@ from gpflow.decors import name_scope, params_as_tensors, autoflow
 
 from ..utils import is_symmetric_matrix, is_pos_def
 
+
 class Model:
 	def __init__ (self, f, H, Q, R):
 		self.D = Q.shape[0]
@@ -46,7 +47,6 @@ class Model:
 		assert isinstance(H, np.ndarray)
 		assert H.ndim == 2
 		self._H  = H
-		self.tfH = tf.constant(H.tolist(), dtype=settings.float_type)
 	@H.deleter
 	def H (self):
 		del self._H
@@ -61,7 +61,6 @@ class Model:
 	def Q (self, Q):
 		assert is_symmetric_matrix(Q)
 		self._Q  = Q
-		self.tfQ = tf.constant(Q.tolist(), dtype=settings.float_type)
 	@Q.deleter
 	def Q (self):
 		del self._Q
@@ -76,7 +75,6 @@ class Model:
 	def R (self, R):
 		assert is_symmetric_matrix(R)
 		self._R  = R
-		self.tfR = tf.constant(R.tolist(), dtype=settings.float_type)
 	@R.deleter
 	def R (self):
 		del self._R
@@ -110,57 +108,6 @@ class Model:
 		yk  = np.matmul(self.H, x)
 		return xk1, yk
 
-
-	@autoflow((settings.float_type, [None, None]))
-	def predict_f (self, Xnew):
-		"""
-		Compute the mean and variance of the latent function(s) at the points
-		Xnew.
-		"""
-		return self._build_predict(Xnew)
-
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]))
-	def predict_f_uncertain_input (self, Xmean, Xvar):
-		"""
-		Compute the mean and variance of the latent function(s) at the 
-		uncertain point Xnew \sim N(Xmean, Xvar)
-		"""
-		return self._build_predict_uncertain_input( Xmean, Xvar )
-
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]))
-	def predict_f_uncertain_input_gradients (self, Xmean, Xvar):
-		"""
-		Given uncertain input Xnew \sim N(Xmean, Xvar), compute 
-			M   Marginal mean, E_{x,f}[ f(x) ]
-			S   Marginal covariance, V_{x,f}[ f(x) ]
-			V   Input-output covariance, cov[ x, f(x) ]
-			+ gradients wrt Xmean and Xvar
-		"""
-		M, S, V = self._build_predict_uncertain_input( Xmean, Xvar )
-		# output mean by input mean [E x D]
-		dMdm = tf.stack([ tf.gradients(M[i], [Xmean], name="dMdm_%d"%i)[0] \
-							for i in range(self.num_latent)])
-		# output mean by input covariance [E x D x D]
-		dMds = tf.stack([ tf.gradients(M[i], [Xvar], name="dMds_%d"%i)[0] \
-							for i in range(self.num_latent)])
-		# output covariance by input mean [E x E x D]
-		dSdm = tf.stack([ tf.stack([
-						tf.gradients(S[i,j], [Xmean], name="dSdm_%d_%d"%(i,j))[0] \
-				for j in range(self.num_latent)]) for i in range(self.num_latent)])
-		# output covariance by input covariance [E x E x D x D]
-		dSds = tf.stack([ tf.stack([
-						tf.gradients(S[i,j], [Xvar], name="dSds_%d_%d"%(i,j))[0] \
-				for j in range(self.num_latent)]) for i in range(self.num_latent)])
-		# cross-covariance by input mean [D x E x D]
-		dVdm = tf.stack([ tf.stack([
-						tf.gradients(V[i,j], [Xmean], name="dVdm_%d_%d"%(i,j))[0] \
-				for j in range(self.num_latent)]) for i in range(self.num_input)])
-		# cross-covariance by input covariance [D x E x D x D]
-		dVds = tf.stack([ tf.stack([
-						tf.gradients(V[i,j], [Xvar], name="dVds_%d_%d"%(i,j))[0] \
-				for j in range(self.num_latent)]) for i in range(self.num_input)])
-		return M, S, V, dMdm, dMds, dSdm, dSds, dVdm, dVds
-
 	def sample (self, x0, U):
 		"""
 		Stochastic model simulation
@@ -188,6 +135,33 @@ class Model:
 		vk = mvn( np.zeros(self.E), self.R )
 		return xk1+wk, yk+vk
 	
+
+
+
+
+class FlowModel (Model):
+	def __init__ (self, f, H, Q, R):
+		Model.__init__(self, f, H, Q, R)
+		self.tfH = tf.constant(H.tolist(), dtype=settings.float_type)
+		self.tfQ = tf.constant(Q.tolist(), dtype=settings.float_type)
+		self.tfR = tf.constant(R.tolist(), dtype=settings.float_type)
+
+	@autoflow((settings.float_type, [None, None]))
+	def predict_f (self, Xnew):
+		"""
+		Compute the mean and variance of the latent function(s) at the points
+		Xnew.
+		"""
+		return self._build_predict(Xnew)
+
+	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]))
+	def predict_f_uncertain_input (self, Xmean, Xvar):
+		"""
+		Compute the mean and variance of the latent function(s) at the 
+		uncertain point Xnew \sim N(Xmean, Xvar)
+		"""
+		return self._build_predict_uncertain_input( Xmean, Xvar )
+
 	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]),\
 			(settings.float_type, [None]))
 	def predict_x_dist (self, xk, Pk, u):
