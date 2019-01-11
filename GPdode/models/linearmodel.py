@@ -26,7 +26,8 @@ class LinearModel (Parameterized, Model):
 			    y_k = H * x_k  +  v_k,               v_k ~ N(0, R)
 		"""
 		Parameterized.__init__(self, name=name)
-		Model.__init__(self, lambda x,u: np.matmul(F,x)+np.matmul(B,u), H, Q, R)
+		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
+		Model.__init__(self, f, H, Q, R)
 
 		self.F  = F
 		self.B  = B
