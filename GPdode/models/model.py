@@ -108,6 +108,7 @@ class Model:
 		yk  = np.matmul(self.H, x)
 		return xk1, yk
 
+
 	def sample (self, x0, U):
 		"""
 		Stochastic model simulation
@@ -131,9 +132,9 @@ class Model:
 
 	def _sample (self, x, u):
 		xk1, yk = self.predict(x, u)
-		wk = mvn( np.zeros(self.D), self.Q )
-		vk = mvn( np.zeros(self.E), self.R )
-		return xk1+wk, yk+vk
+		xk1 += mvn( np.zeros(self.D), self.Q )
+		yk  += mvn( np.zeros(self.E), self.R )
+		return xk1, yk
 	
 
 
