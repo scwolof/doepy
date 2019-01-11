@@ -6,13 +6,13 @@ from gpflow import settings
 from gpflow.params import Parameterized
 from gpflow.decors import name_scope, params_as_tensors, autoflow
 
-from .model import Model
+from .model import FlowModel
 from ..utils import block_diagonal
 
 # Float type
 dtype = settings.float_type
 
-class LinearModel (Parameterized, Model):
+class LinearModel (Parameterized, FlowModel):
 	def __init__ (self, F, B, H, Q, R, name='name'):
 		r"""
 		F : state transition matrix

@@ -17,13 +17,13 @@ from gpflow.mean_functions import Zero
 
 import logging
 
-from .model import Model
+from .model import FlowModel
 from ..utils import block_diagonal
 
 # Float type
 dtype = settings.float_type
 
-class GPModel (GPflowModel, Model):
+class GPModel (GPflowModel, FlowModel):
 	def __init__ (self, f, Xtrain, Ytrain, H, Q, R, delta_transition=False, \
 			name='name', noise_var=1e-6, noise_trainable=False):
 		r"""
