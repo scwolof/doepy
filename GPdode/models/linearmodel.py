@@ -27,7 +27,7 @@ class LinearModel (Parameterized, FlowModel):
 		"""
 		Parameterized.__init__(self, name=name)
 		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
-		Model.__init__(self, f, H, Q, R)
+		FlowModel.__init__(self, f, H, Q, R)
 
 		self.F  = F
 		self.B  = B

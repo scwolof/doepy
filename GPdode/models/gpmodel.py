@@ -49,7 +49,7 @@ class GPModel (GPflowModel, FlowModel):
 
 		"""
 		GPflowModel.__init__(self, name=name)
-		Model.__init__(self, f, H, Q, R)
+		FlowModel.__init__(self, f, H, Q, R)
 
 		self.delta_transition = delta_transition
 		# Dimensions
