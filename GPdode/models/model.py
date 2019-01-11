@@ -9,9 +9,7 @@ from gpflow.decors import name_scope, params_as_tensors, autoflow
 from ..utils import is_symmetric_matrix, is_pos_def
 
 class Model:
-	def __init__ (self, f, H, Q, R, name='name'):
-		#super(Model, self).__init__(name=name)
-
+	def __init__ (self, f, H, Q, R):
 		self.D = Q.shape[0]
 		assert self.D == H.shape[1]
 
