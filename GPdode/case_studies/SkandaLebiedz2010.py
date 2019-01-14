@@ -44,11 +44,11 @@ class Model:
 
 class M1 (Model):
 	"""
-	Monod kinetics with constant specific death rate
+	Allosteric model with positive feedback and linear product sink
 	"""
 	def __init__ (self):
 		Model.__init__(self)
-		#self.p0 = np.array([ 0.3, 0.25, 0.56, 0.02 ])
+		self.p0 = np.array([ 0.879, 2.03, 0.109, 1.61e4 ])
 		self.num_param = len( self.p0 )
 
 	def _ode_func (self, x, u, p):
@@ -64,11 +64,12 @@ class M1 (Model):
 
 class M2 (Model):
 	"""
-	Contois kinetics with constant specific death rate
+	Allosteric model with positive feedback in the absence of cooperativity
+	when the product sink is represented by Michaelis-Menten kinetics
 	"""
 	def __init__ (self):
 		Model.__init__(self)
-		self.p0 = np.array([ 0.879, 2.03, 0.109, 161e4 ])
+		self.p0 = np.array([ 6.47, 3.33, 5.11, 244 ])
 		self.num_param = len( self.p0 )
 
 	def _ode_func (self, x, u, p):
@@ -85,7 +86,7 @@ class M2 (Model):
 class DataGen (M1):
 	def __init__ (self):
 		M1.__init__(self)
-		self.true_param = np.array([ 6.47, 3.33, 5.11, 244 ])
+		self.true_param = np.array([ 0.889, 2.16, 0.111, 1.76e4 ])
 
 	def __call__ (self, x, u):
 		return super().__call__(x, u, self.true_param)
