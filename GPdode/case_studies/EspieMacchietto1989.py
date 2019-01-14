@@ -7,6 +7,10 @@ D. Espie and S. Macchietto (1989)
 "The optimal design of dynamic experiments"
 AIChE J 35(2): 223-229
 
+S. P. Asprey and S. Macchietto (2000)
+"Statistical tools for optimal dynamic model building"
+Comp Chem Eng 24: 1261-1267
+
 B. H. Chen and S. P. Asprey (2003)
 "On the design of optimally informative dynamic experiments for model
 discrimination in multiresponse nonlinear situations"
@@ -24,6 +28,7 @@ class Model:
 		self.R = 0.2 * np.eye(2)  # Measurement noise covariance
 
 		self.x0 = np.array([ 1.0, 0.01 ])
+		self.x0_bounds = np.array([[1, 10], [0.01, 0.01]])
 
 		self.T  = 72.0
 		self.dt = 0.75
