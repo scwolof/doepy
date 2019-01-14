@@ -32,6 +32,9 @@ class ProblemInstance (Model):
 		D  = 0.
 		# Constraint violation term
 		#C  = 0.
+		# Control delta constraint
+		#Udelta = 0.
+		#u_old  = None
 		# Means and variances of predicted states and observations 
 		mX = [ model.x0.astype(np.float) for model in self.models ]
 		sX = [ model.P0.astype(np.float) for model in self.models ]
@@ -39,8 +42,12 @@ class ProblemInstance (Model):
 		sY = [ None for model in self.models ]
 		# Iterate over the control sequence
 		for n in range( self.num_steps ):
+			# Next control input
 			u = tf.concat( [self.U[j][n] for j in range(self.Du)], axis=0 )
 			u = tf.reshape( u, [self.Du] )
+			#if u_old is None:
+			#	u_old = u
+			# State prediction
 			for i, model in enumerate( self.models ):
 				mX[i],sX[i] = model._build_predict_x_dist(mX[i],sX[i], u)[:2]
 				mY[i],sY[i] = model._build_predict_y_dist(mX[i],sX[i])
