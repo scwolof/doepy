@@ -9,7 +9,9 @@ in dynamic biochemical systems"
 Bioinformatics 26(7): 939-945
 
 D. Skanda and D. Lebiedz (2013)
-""
+"A robust optimization approach to experimental design for model 
+discrimination of dynamical systems"
+Math Program, Series A 141: 405-433
 
 Comments:
 Original case study does not have control inputs.
@@ -48,7 +50,7 @@ class Model:
 		   dx   States at time t+1
 		"""
 		f = lambda y,t: self._ode_func(y,u,p)
-		#t = np.linspace(0, self.dt, 26)
+		t = np.linspace(0, 20, 21)
 		X = odeint(f, x, t)
 		return X[-1]
 
