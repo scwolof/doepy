@@ -1,6 +1,7 @@
 
 import numpy as np 
 import tensorflow as tf 
+from tensorflow.contrib.distributions import MultivariateNormalFullCovariance as mvn
 
 from gpflow import settings
 from gpflow import Param
@@ -101,6 +102,8 @@ class ProblemInstance (Parameterized):
 	@name_scope('objective')
 	@params_as_tensors
 	def _build_objective (self):
+		# Hard inequality constraints
+		ineq = self._build_u_delta_constraints()
 		# Divergence term
 		D  = 0.
 		# Means and variances of predicted states and observations 
@@ -117,6 +120,7 @@ class ProblemInstance (Parameterized):
 			for i, model in enumerate( self.models ):
 				mX[i],sX[i] = model._build_predict_x_dist(mX[i],sX[i], u)[:2]
 				mY[i],sY[i] = model._build_predict_y_dist(mX[i],sX[i])
+				ineq.append(self._build_state_constraint(mY[i],sY[i]))
 			D += self.divergence( mY, sY )
 		return -D
 
@@ -132,6 +136,14 @@ class ProblemInstance (Parameterized):
 				ineq.append(d_const1)
 				ineq.append(d_const2)
 		return ineq
+
+	@name_scope('u_delta_constraints')
+	@params_as_tensors
+	def _build_state_constraint (self, mY, mS):
+		dist  = mvn(mY, mS)
+		Phi_b = dist.cdf(self.y_bounds[:,1])
+		Phi_a = dist.cdf(self.y_bounds[:,0])
+		return Phi_b - Phi_a - self.y_const_prob
 
 	@autoflow()
 	def control_signal (self):
