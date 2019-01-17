@@ -12,7 +12,7 @@ from gpflow.transforms import Logistic
 from .design_criteria import HR
 
 class ProblemInstance (Parameterized):
-	def __init__ (self, models, num_steps, u_bounds, y_bounds, 
+	def __init__ (self, models, num_steps, u_bounds, u_delta_lim, y_bounds, 
 			y_constraint_prob=0.99, div_criterion=None):
 		super(ProblemInstance, self).__init__(name='problem')
 		self._objective = None
@@ -28,7 +28,7 @@ class ProblemInstance (Parameterized):
 							transform=Logistic(ub[0], ub[1]), 
 							dtype=settings.float_type) 
 						for ub in u_bounds])
-
+		self.u_delta  = u_delta_lim
 		self.y_bounds = y_bounds
 		self.y_const_prob = y_constraint_prob
 		assert isinstance(self.y_const_prob, float) and 0<self.y_const_prob<1
@@ -120,8 +120,18 @@ class ProblemInstance (Parameterized):
 			D += self.divergence( mY, sY )
 		return -D
 
-	def _build_constraints (self, mY, sY):
-		return NotImplementedError
+	@name_scope('u_delta_constraints')
+	@params_as_tensors
+	def _build_u_delta_constraints (self):
+		ineq = []
+		# U delta constraints
+		for n in range( 1, self.num_steps ):
+			for j in range( self.Du ):
+				d_const1 = self.U[j][n] - self.U[j][n-1] + self.u_delta[j]
+				d_const2 = self.U[j][n-1] - self.U[j][n] + self.u_delta[j]
+				ineq.append(d_const1)
+				ineq.append(d_const2)
+		return ineq
 
 	@autoflow()
 	def control_signal (self):
