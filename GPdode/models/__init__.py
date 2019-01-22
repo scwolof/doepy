@@ -1,4 +1,4 @@
 
-from .model import Model, FlowModel
+from .model import Model
 from .linearmodel import LinearModel
 from .gpmodel import GPModel
