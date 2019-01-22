@@ -64,9 +64,9 @@ class LinearModel (Model):
 			return (M, S, V) if cross_cov else (M, S)
 		# Compute gradients
 		D, Du = self.B.shape
-		dMdx = self.F
+		dMdx = self.F.copy()
 		dMds = np.zeros(( self.D, self.D, self.D ))
-		dMdu = self.B
+		dMdu = self.B.copy()
 		dSdx = np.zeros(( self.D, self.D, self.D ))
 		dSds = np.zeros(( self.D, self.D, self.D, self.D ))
 		for d1 in range( self.D ):
@@ -79,6 +79,6 @@ class LinearModel (Model):
 		dVdx = np.zeros(( self.D, self.D, self.D ))
 		dVds = np.zeros(( self.D, self.D, self.D, self.D ))
 		for d1 in range( self.D ):
-			dVds[d1,:,d1] = self.F
+			dVds[d1,:,d1] = self.F.copy()
 		dVdu = np.zeros(( self.D, self.D, self.Du ))
 		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu
