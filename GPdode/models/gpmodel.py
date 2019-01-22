@@ -88,36 +88,77 @@ class GPModel (Model):
 	"""
 	State prediction
 	"""
-	def _predict_x_dist (self, xk, Pk, u, cross_cov=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		if self.transform:
 			assert self.z_transform is not None
 			assert self.t_transform is not None
 			assert not self.gps == []
 
-		xku  = np.array( xk.tolist() + u.tolist() )
-		tnew = xku.copy()
+		# Input mean and variance
+		tnew = np.array( xk.tolist() + u.tolist() )
 		dim  = len( tnew )
-		Pnew = np.zeros((dim, dim))
-		Pnew[:self.D, :self.D] = Pk
+		Snew = np.zeros((dim, dim))
+		Snew[:self.D, :self.D] = Sk
 		if self.transform:
 			tnew = self.t_transform(tnew)
-			Pnew = self.t_transform.cov(Pnew)
+			Snew = self.t_transform.cov(Snew)
 
-		M, S, V = self.moment_match(tnew, Pnew)
+		# Moment matching
+		res = self.moment_match(tnew, Snew, grad=grad)
+		if grad:
+			M, S, V, dMdt, dMds, dSdt, dSds, dVdt, dVds = res
+		else:
+			M, S, V = res
 				
+		# Transform back
 		if self.transform:
+			qt, qz = self.t_transform.q, self.z_transform.q
 			M  = self.z_transform(M, back=True)
 			S  = self.z_transform.cov(S, back=True)
-			V *= self.t_transform.q[:,None] * self.z_transform.q[None,:]
-		V = V[:self.D]
+			V *= qt[:,None] * qz[None,:]
+			if grad:
+				dMdt *= qz[:,None] / qt[None,:]
+				dMds *= qz[:,None,None] / ( qt[None,:,None] * qt[None,None,:] )
+				dSdt *= ( qz[:,None,None] * qz[None,:,None] ) / qt[None,None,:]
+				qtqt  = qt[None,None,:,None] * qt[None,None,None,:]
+				dSds *= ( qz[:,None,None,None] * qz[None,:,None,None] ) / qtqt
+				dVdt *= ( qt[:,None,None] * qz[None,:,None] ) / qt[None,None,:]
+				dVds *= ( qt[:,None,None,None] * qz[None,:,None,None] ) / qtqt
 
-		mu_k = M
-		S_k  = S + self.Q
+		# Separate state and control dimensions again
+		V = V[:self.D]
+		if grad:
+			dMdx = dMdt[:,:self.D]
+			dMdu = dMdt[:,self.D:]
+			dMds = dMds[:,:self.D,:self.D]
+			dSdx = dSdt[:,:,:self.D]
+			dSdu = dSdt[:,:,self.D:]
+			dSds = dSds[:,:,:self.D,:self.D]
+			dVdx = dVdt[:self.D,:,:self.D]
+			dVdu = dVdt[:self.D,:,self.D:]
+			dVds = dVds[:self.D,:,self.D:,self.D:]
+
+		# Process noise variance
+		S += self.Q
+		# Delta transition
 		if self.delta_transition:
-			mu_k += xk
-			S_k  += Pk + V + V.T
-			V    += Pk
-		return (mu_k, S_k, V) if cross_cov else (mu_k, S_k)
+			M += xk
+			S += Sk + V + V.T
+			V += Sk
+			if grad:
+				dMdx += np.eye(self.D)
+				dSdx += dVdx + np.swapaxes(dVdx,0,1)
+				dSds += dVds + np.swapaxes(dVds,0,1)
+				for d1 in range(self.D):
+					for d2 in range(self.D):
+						dSds[d1,d2,d1,d2] += 1
+						dVds[d1,d2,d1,d2] += 1
+		# Returns
+		if not grad:
+			return (M, S, V) if cross_cov else (M, S)
+		if not cross_cov:
+			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
+		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu
 
 
 	def moment_match (self, mu, s2, grad=False):
@@ -125,6 +166,8 @@ class GPModel (Model):
 		Inputs
 			mu    input mean [ D ]
 			s2    input covariance [ D, D ]
+
+		WARNING: SOME UNCERTAINTY IN CORRECTNESS OF GRADIENTS
 		"""
 		assert not self.gps == []
 		# Memory allocation
