@@ -1,7 +1,18 @@
 
 import numpy as np 
 import tensorflow as tf 
+#tfco = tf.contrib.constrained_optimization
+#ConMinProb = tfco.ConstrainedMinimizationProblem
 from tensorflow.contrib.distributions import MultivariateNormalFullCovariance as mvn
+
+#from .. import settings
+from gpflow.core.compilable import Build
+#from ..params import Parameterized, DataHolder
+#from ..decors import autoflow
+#from ..mean_functions import Zero
+
+from .training import tf_contrib_constrained_optimization_forked as tfco
+ConMinProb = tfco.ConstrainedMinimizationProblem
 
 from gpflow import settings
 from gpflow import Param
@@ -12,12 +23,14 @@ from gpflow.transforms import Logistic
 
 from .design_criteria import HR
 
-class ProblemInstance (Parameterized):
+class ProblemInstance (Parameterized, ConMinProb):
 	def __init__ (self, models, num_steps, u_bounds, u_delta_lim, y_bounds, 
 			y_constraint_prob=0.99, div_criterion=None):
-		super(ProblemInstance, self).__init__(name='problem')
-		self._objective = None
-		self._likelihood_tensor = None
+		Parameterized.__init__(self, name='problem')
+		ConMinProb.__init__(self)
+		self._objective   = None
+		self._constraints = None
+		#self.pre_train_ops = False
 
 		self.models     = models
 		self.num_models = len(models)
@@ -35,24 +48,28 @@ class ProblemInstance (Parameterized):
 		assert isinstance(self.y_const_prob, float) and 0<self.y_const_prob<1
 
 	@property
-	def objective(self):
+	def objective (self):
 		return self._objective
 
 	@property
-	def likelihood_tensor(self):
+	def constraints (self):
+		return tf.stack( self._constraints, axis=0 )
+
+	@property
+	def likelihood_tensor (self):
 		return self._likelihood_tensor
 
 	@autoflow()
-	def compute_log_prior(self):
+	def compute_log_prior (self):
 		"""Compute the log prior of the model."""
 		return self.prior_tensor
 
 	@autoflow()
-	def compute_log_likelihood(self):
+	def compute_log_likelihood (self):
 		"""Compute the log likelihood of the model."""
 		return self.likelihood_tensor
 
-	def is_built(self, graph):
+	def is_built (self, graph):
 		is_built = super().is_built(graph)
 		if is_built is not Build.YES:
 			return is_built
@@ -60,8 +77,8 @@ class ProblemInstance (Parameterized):
 			return Build.NO
 		return Build.YES
 
-	def build_objective(self):
-		likelihood = self._build_objective()
+	def build_objective (self):
+		likelihood = self._build_likelihood()
 		priors = []
 		for param in self.parameters:
 			unconstrained = param.unconstrained_tensor
@@ -70,20 +87,21 @@ class ProblemInstance (Parameterized):
 		prior = self._build_prior(priors)
 		return -tf.add(likelihood, prior, name='objective')
 
-	def _clear(self):
-		super(Model, self)._clear()
-		self._likelihood_tensor = None
+	def _clear (self):
+		super(ProblemInstance, self)._clear()
 		self._objective = None
+		self._constraints = None
+		self._likelihood_tensor = None
 
-	def _build(self):
-		super(Model, self)._build()
-		likelihood = self._build_objective()
+	def _build (self):
+		super(ProblemInstance, self)._build()
+		likelihood, constraints = self._build_problem()
 		prior = self.prior_tensor
-		#objective = self._build_objective(likelihood, prior)
+		objective = self._build_objective(likelihood, prior)
 		self._likelihood_tensor = likelihood
+		self._constraints = constraints
 		self._objective = -tf.add(likelihood, prior, name='objective')
 
-	"""
 	def sample_feed_dict(self, sample):
 		tensor_feed_dict = {}
 		for param in self.parameters:
@@ -93,15 +111,14 @@ class ProblemInstance (Parameterized):
 			tensor = param.unconstrained_tensor
 			tensor_feed_dict[tensor] = unconstrained_value
 		return tensor_feed_dict
-	"""
 
-	#def _build_objective(self, likelihood_tensor, prior_tensor):
-	#    func = tf.add(likelihood_tensor, prior_tensor, name='nonneg_objective')
-	#    return tf.negative(func, name='objective')
+	def _build_objective(self, likelihood_tensor, prior_tensor):
+		func = tf.add(likelihood_tensor, prior_tensor, name='nonneg_objective')
+		return tf.negative(func, name='objective')
 
-	@name_scope('objective')
+	@name_scope('problem_formulation')
 	@params_as_tensors
-	def _build_objective (self):
+	def _build_problem (self):
 		# Hard inequality constraints
 		ineq = self._build_u_delta_constraints()
 		# Divergence term
@@ -120,30 +137,44 @@ class ProblemInstance (Parameterized):
 			for i, model in enumerate( self.models ):
 				mX[i],sX[i] = model._build_predict_x_dist(mX[i],sX[i], u)[:2]
 				mY[i],sY[i] = model._build_predict_y_dist(mX[i],sX[i])
-				ineq.append(self._build_state_constraint(mY[i],sY[i]))
+				#ineq.append( self._build_state_constraint(mY[i],sY[i]) )
 			D += self.divergence( mY, sY )
-		return -D
+		return -D, ineq
 
-	@name_scope('u_delta_constraints')
+	@name_scope('likelihood')
 	@params_as_tensors
+	def _build_likelihood (self):
+		return self._build_objective()[0]
+
+	#@name_scope('u_delta_constraints')
+	#@params_as_tensors
 	def _build_u_delta_constraints (self):
 		ineq = []
 		# U delta constraints
 		for n in range( 1, self.num_steps ):
 			for j in range( self.Du ):
-				d_const1 = self.U[j][n] - self.U[j][n-1] + self.u_delta[j]
-				d_const2 = self.U[j][n-1] - self.U[j][n] + self.u_delta[j]
+				#d_const1 = self.U[j][n] - self.U[j][n-1] + self.u_delta[j]
+				#d_const2 = self.U[j][n-1] - self.U[j][n] + self.u_delta[j]
+				# | U[n] - U[n-1] | <= u_delta
+				"""
+				d_const1 = self.U[j][n] - self.U[j][n-1] - self.u_delta[j]
+				d_const2 = self.U[j][n-1] - self.U[j][n] - self.u_delta[j]
 				ineq.append(d_const1)
 				ineq.append(d_const2)
+				"""
+				d_const = -self.U[j][n]
+				ineq.append(d_const)
 		return ineq
 
-	@name_scope('u_delta_constraints')
-	@params_as_tensors
+	#@name_scope('state_constraints')
+	#@params_as_tensors
+	"""
 	def _build_state_constraint (self, mY, mS):
 		dist  = mvn(mY, mS)
 		Phi_b = dist.cdf(self.y_bounds[:,1])
 		Phi_a = dist.cdf(self.y_bounds[:,0])
 		return Phi_b - Phi_a - self.y_const_prob
+	"""
 
 	@autoflow()
 	def control_signal (self):
@@ -156,5 +187,12 @@ class ProblemInstance (Parameterized):
 		U = tf.reshape( U, [self.Du, self.num_steps] )
 		return tf.transpose(U)
 
-
-
+	def sample_feed_dict(self, sample):
+		tensor_feed_dict = {}
+		for param in self.parameters:
+			if not param.trainable: continue
+			constrained_value = sample[param.pathname]
+			unconstrained_value = param.transform.backward(constrained_value)
+			tensor = param.unconstrained_tensor
+			tensor_feed_dict[tensor] = unconstrained_value
+		return tensor_feed_dict
