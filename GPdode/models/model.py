@@ -1,26 +1,31 @@
 
-import numpy as np
+import numpy as np 
 from numpy.random import multivariate_normal as mvn
-import tensorflow as tf
 
-from gpflow import settings
-from gpflow.decors import name_scope, params_as_tensors, autoflow
-
-from ..utils import is_symmetric_matrix, is_pos_def
-
+from md_code.utils import is_symmetric_matrix, is_pos_def
 
 class Model:
 	def __init__ (self, f, H, Q, R):
-		self.D = Q.shape[0]
-		assert self.D == H.shape[1]
+		"""
+		f : transition function x_{k+1} = f(x_k, u_k)
+		H : observation matrix
+		Q : process noise covariance matrix
+		R : measurement noise covariance
 
-		self.E = H.shape[0]
-		assert self.E == R.shape[0]
-		
-		self.f = f
-		self.H = H.copy()
-		self.Q = Q.copy()
-		self.R = R.copy()
+		Model:
+			x_{k+1} = f( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
+			    y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
+		"""
+		self.f  = f
+		self.H  = H
+		self.Q  = Q
+		self.R  = R
+
+		self.D = self.Q.shape[0]
+		assert self.D == self.H.shape[1]
+
+		self.E = self.H.shape[0]
+		assert self.E == self.R.shape[0]
 
 	"""
 	Transition function
@@ -46,7 +51,7 @@ class Model:
 	def H (self, H):
 		assert isinstance(H, np.ndarray)
 		assert H.ndim == 2
-		self._H  = H
+		self._H = H
 	@H.deleter
 	def H (self):
 		del self._H
@@ -60,7 +65,7 @@ class Model:
 	@Q.setter
 	def Q (self, Q):
 		assert is_symmetric_matrix(Q)
-		self._Q  = Q
+		self._Q = Q
 	@Q.deleter
 	def Q (self):
 		del self._Q
@@ -74,7 +79,7 @@ class Model:
 	@R.setter
 	def R (self, R):
 		assert is_symmetric_matrix(R)
-		self._R  = R
+		self._R = R
 	@R.deleter
 	def R (self):
 		del self._R
@@ -86,7 +91,7 @@ class Model:
 		"""
 		Deterministic prediction from model
 			x_{k+1} = f( x_k, u_k )
-				y_k = H * x_k
+			    y_k = H * x_k
 
 		If U.ndim == 1, one-step prediction
 		If U.ndim == 2, multi-step prediction
@@ -108,12 +113,11 @@ class Model:
 		yk  = np.matmul(self.H, x)
 		return xk1, yk
 
-
 	def sample (self, x0, U):
 		"""
 		Stochastic model simulation
 			x_{k+1} = f( x_k, u_k ) + w_k
-				y_k = H * x_k + v_k
+			    y_k = H * x_k + v_k
 
 		If U.ndim == 1, one-step prediction
 		If U.ndim == 2, multi-step prediction
@@ -132,89 +136,62 @@ class Model:
 
 	def _sample (self, x, u):
 		xk1, yk = self.predict(x, u)
-		xk1 += mvn( np.zeros(self.D), self.Q )
-		yk  += mvn( np.zeros(self.E), self.R )
-		return xk1, yk
-	
+		wk = mvn( np.zeros(self.D), self.Q )
+		vk = mvn( np.zeros(self.E), self.R )
+		return xk1+wk, yk+vk
 
-
-
-
-class FlowModel (Model):
-	def __init__ (self, f, H, Q, R):
-		Model.__init__(self, f, H, Q, R)
-		self.tfH = tf.constant(H.tolist(), dtype=settings.float_type)
-		self.tfQ = tf.constant(Q.tolist(), dtype=settings.float_type)
-		self.tfR = tf.constant(R.tolist(), dtype=settings.float_type)
-
-	@autoflow((settings.float_type, [None, None]))
-	def predict_f (self, Xnew):
-		"""
-		Compute the mean and variance of the latent function(s) at the points
-		Xnew.
-		"""
-		return self._build_predict(Xnew)
-
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]))
-	def predict_f_uncertain_input (self, Xmean, Xvar):
-		"""
-		Compute the mean and variance of the latent function(s) at the 
-		uncertain point Xnew \sim N(Xmean, Xvar)
-		"""
-		return self._build_predict_uncertain_input( Xmean, Xvar )
-
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]),\
-			(settings.float_type, [None]))
-	def predict_x_dist (self, xk, Pk, u):
+	def predict_x_dist (self, xk, Pk, U, cross_cov=False):
 		"""
 		Input state posterior mean xk and variance Pk, and controls U 
 			p( x_k | y_{1 : k} ) = N( xk, Pk )
 		Outputs mean and variance of state prediction
-			p( x_{k+1} | y_{1 : k}, u ) = int[ f(x, u) * N(x | xk, Pk) ] dx
-		and cross-covariance cov[x_k, x_{k+1}]
-		"""
-		return self._build_predict_x_dist(xk, Pk, u)[:2]
-	
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]),\
-			(settings.float_type, [None]))
-	def predict_x_dist_covar (self, xk, Pk, u):
-		"""
-		Input state posterior mean xk and variance Pk, and controls U 
-			p( x_k | y_{1 : k} ) = N( xk, Pk )
-		Outputs mean and variance of state prediction
-			p( x_{k+1} | y_{1 : k}, u ) = int[ f(x, u) * N(x | xk, Pk) ] dx
-		and cross-covariance cov[x_k, x_{k+1}]
-		"""
-		return self._build_predict_x_dist(xk, Pk, u)
+			p( x_{k+1} | y_{1 : k} ) = int[ f(x, u) * N(x | xk, Pk) ] dx
 
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]))
+		If U.ndim == 1, one-step prediction.
+		If U.ndim == 2, multi-step prediction
+		"""
+		if U.ndim == 1:
+			return self._predict_x_dist(xk, Pk, U, cross_cov=cross_cov)
+
+		n = len(U)
+		X = np.zeros(( n+1, self.D ))
+		P = np.zeros(( n+1, self.D, self.D ))
+
+		X[0] = xk
+		P[0] = Pk
+		for k in range(n):
+			X[k+1], P[k+1] = self._predict_x_dist(X[k], P[k], U[k])
+		return X, P
+
+	def _predict_x_dist (self, xk, Pk, u, cross_cov=False):
+		raise NotImplementedError
+
 	def predict_y_dist (self, m, S):
 		"""
 		Input state mean m and variance S
 			p( x_k | y_{1 : T} ) = N( m, S )
 		Outputs mean and variance of observation
 			p( y_k | y_{1 : T} ) = N( mu, s2 )
+
+		If m.ndim == 1, one-step prediction
+		If m.ndim == 2, multi-step prediction
 		"""
-		return self._build_predict_y_dist(m, S)
+		if m.ndim == 1:
+			return self._predict_y_dist(m, S)
 
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]),\
-			(settings.float_type, [None]))
-	def predict_dist (self, xk, Pk, u):
-		m_x, S_x = self._build_predict_x_dist(xk, Pk, u)[:2]
-		m_y, S_y = self._build_predict_y_dist(xk, Pk)
-		return m_x, S_x, m_y, S_y
+		n = len(m)
+		Y = np.zeros(( n, self.E ))
+		P = np.zeros(( n, self.E, self.E ))
+		for k in range(n):
+			Y[k], P[k] = self._predict_y_dist(m[k], S[k])
+		return Y, P
 
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]),\
-			(settings.float_type, [None]), (settings.int_type, []))
-	def predict_dist_iterative (self, xk, Pk, U, num_steps):
-		for i in tf.range( num_steps ):
-			m_x, S_x = self._build_predict_x_dist(xk, Pk, u)[:2]
-			m_y, S_y = self._build_predict_y_dist(xk, Pk)
-		return m_x, S_x, m_y, S_y
-	
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None]),\
-			(settings.float_type, [None, None]))
-	def filter_x_dist (self, yk, m, S):
+	def _predict_y_dist (self, m, S):
+		mu = np.matmul(self.H, m)
+		s2 = np.matmul(self.H, np.matmul(S, self.H.T) ) + self.R
+		return mu, s2
+
+	def filter (self, yk, m, S):
 		"""
 		Input observation yk, prediction mean m and variance S 
 			p( x_k | y_{1 : k-1} ) = N( m, S )
@@ -225,46 +202,64 @@ class FlowModel (Model):
 		m  : [ (n), D ]
 		S  : [ (n), D, D ]
 		"""
-		return self._build_filter_x_dist(yk, m, S)
+		assert yk.ndim == m.ndim
 
-	@autoflow((settings.float_type, [None]), (settings.float_type, [None, None]),\
-			  (settings.float_type, [None]), (settings.float_type, [None, None]),\
-			  (settings.float_type, [None]))
-	def smooth_x_dist (self, x1, P1, x2, P2, u):
-		"""
-		Smoothened posterior
-			p(x_k | y_{1 : T}, u_{1 : T}) = N( xs_k, Ps_k )
-		where
-			p( x_k     | y_{1 : k}, u_{1 : k} ) = N(x1, P1)
-			p( x_{k+1} | y_{1 : T}, u_{1 : T} ) = N(x2, P2)
-			p( u_k ) = N(U1, S_U)
-		"""
-		return self._build_smooth_x(x1, P1, x2, P2, u)
+		if yk.ndim == 1:
+			return self._filter(Y, m, S)
 
-	@name_scope('predict_observation')
-	@params_as_tensors
-	def _build_predict_y_dist (self, m, S):
-		mu = tf.matmul(self.tfH, tf.reshape(m, [self.D, 1]))
-		mu = tf.reshape(mu, [self.E])
-		s2 = tf.matmul(self.tfH, tf.matmul(S, self.tfH, transpose_b=True) ) + self.tfR
-		return mu, s2
+		n = len(yk)
+		X = np.zeros(( n, self.D ))
+		P = np.zeros(( n, self.D, self.D ))
+		for k in range(n):
+			X[k], P[k] = self._filter(yk[k], m[k], S[k])
+		return X, P
 
-	@name_scope('filter_state')
-	@params_as_tensors
-	def _build_filter_x_dist (self, yk, m, S):
-		m  = tf.reshape(m, [self.D, 1])
-		yk = tf.reshape(yk, [self.E, 1])
-		SH = tf.matmul(S, self.tfH, transpose_b=True)
-		K  = tf.matmul(SH, tf.linalg.inv( tf.matmul(self.tfH, SH) + self.tfR ) )
-		tmp = tf.matmul(self.tfH, m)
-		mk = m + tf.matmul(K, yk - tmp)
-		Pk = S - tf.matmul(K, SH, transpose_b=True)
-		mk = tf.reshape(mk, [self.D])
+	def _filter (self, yk, m, S):
+		SH   = np.matmul(S, self.H.T)
+		K    = np.matmul(SH, np.linalg.inv(np.matmul(self.H, SH) + self.R))
+		mk   = m + np.matmul(K, yk - np.matmul(self.H, m))
+		Pk   = S - np.matmul(K, SH.T)
 		return mk, Pk
 
-	@name_scope('smooth_state')
-	@params_as_tensors
-	def _build_smooth_x (self, x1, P1, x2, P2, u):
+	def predict_filter (self, Y, x0, P0, U):
+		"""
+		Filter sequence, based on observations Y, controls U,
+		and with prediction p(x_1) ~ N(x0, P0)
+
+		Y  : [ n, E ]		( y_1, ..., y_n )
+		x0 : [ D, ]
+		P0 : [ D, D ]
+		U  : [ n, D_U ]		( u_1, ..., u_{n-1} )
+
+		Outputs
+		X  : [ n+1, D ]     ( x_1, ..., x_n )
+		P  : [ n+1, D, D]
+		"""
+		n = len(Y)
+		X = np.zeros(( n, self.D ))
+		P = np.zeros(( n, self.D, self.D ))
+		m, S = x0, P0
+		for k in range( n ):
+			X[k], P[k] = self._filter(Y[k], m, S)
+			if k < n-1:
+				m, S = self.predict_x_dist(X[k], P[k], U[k])
+		return X, P
+
+	def smooth (self, X, P, U):
+		"""
+		Iteratively smooths sequences X = [x_1, ..., x_n] and 
+		P = [P_1, ..., P_n] with controls U = [u_1, ..., u_n]
+		"""
+		n  = len(X)
+		Xs = np.zeros(( n, self.D ))
+		Ps = np.zeros(( n, self.D, self.D ))
+		Xs[-1] = X[-1]
+		Ps[-1] = P[-1]
+		for k in np.arange(1, n)[::-1]:
+		    Xs[k-1],Ps[k-1] = self._smooth(X[k-1], P[k-1], Xs[k], Ps[k], U[k-1])
+		return Xs, Ps
+
+	def _smooth (self, xk, Pk, xk1, Pk1, u_k):
 		"""
 		Inputs xk, Pk, xk1, P_{k+1}, u_k
 			p( x_k | y_{1:k} ) = N( xk, Pk )
@@ -273,10 +268,9 @@ class FlowModel (Model):
 		Produces smoothed x_k, P_k
 			p( x_k | y_{1:T} ) = N( xs, Ps )
 		"""
-		m, S, V = self._build_predict_x_dist(x1, P1, u)
-		x1 = tf.reshape(x1, [self.D, 1])
-		J  = tf.matmul( V, tf.linalg.inv(S) )
-		xs = x1 + tf.matmul( J, tf.reshape(x2 - m, [self.D, 1]) )
-		Ps = P1 + tf.matmul( J, tf.matmul( P2 - S, J, transpose_b=True ) )
-		xs = tf.reshape(xs, [self.D])
+		m, S, V = self.predict_x_dist(xk, Pk, u_k, cross_cov=True)
+		J  = np.matmul( V, np.linalg.inv(S) )
+		xs = xk + np.matmul( J, xk1 - m )
+		Ps = Pk + np.matmul( J, np.matmul( Pk1 - S, J.T ) )
 		return xs, Ps
+
