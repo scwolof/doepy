@@ -164,15 +164,15 @@ class Model:
 				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
 			return X, S
 		dXdx = np.zeros(( n, self.D, self.D ))
-		dXdp = np.zeros(( n, self.D, self.D, self.D ))
+		dXds = np.zeros(( n, self.D, self.D, self.D ))
 		dXdu = np.zeros(( n, self.D, self.Du ))
 		dSdx = np.zeros(( n, self.D, self.D, self.D ))
-		dSdp = np.zeros(( n, self.D, self.D, self.D, self.D ))
+		dSds = np.zeros(( n, self.D, self.D, self.D, self.D ))
 		dSdu = np.zeros(( n, self.D, self.D, self.Du ))
 		for k in range(n):
-			X[k], S[k], dXdx[k], dXdp[k], dXdu[k], dSdx[k], dSdp[k], dSdu[k] \
+			X[k], S[k], dXdx[k], dXds[k], dXdu[k], dSdx[k], dSds[k], dSdu[k] \
 			                = self._predict_x_dist(X[k], S[k], U[k], grad=grad)
-		return X, S, dXdx, dXdp, dXdu, dSdx, dSdp, dSdu
+		return X, S, dXdx, dXds, dXdu, dSdx, dSds, dSdu
 
 	def _predict_x_dist (self, xk, Pk, u, cross_cov=False, grad=False):
 		raise NotImplementedError
