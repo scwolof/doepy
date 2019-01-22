@@ -26,7 +26,6 @@ import numpy as np
 
 class Transform:
 	"""
-	Parameter transformation:
 	X  ->  ( X - self.m ) / self.q 
 	"""
 	def __init__ (self, m, q):
