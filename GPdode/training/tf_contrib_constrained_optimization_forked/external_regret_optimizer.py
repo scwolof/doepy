@@ -45,7 +45,8 @@ import abc
 
 import six
 
-from tensorflow.contrib.constrained_optimization.python import constrained_optimizer
+#from tensorflow.contrib.constrained_optimization.python import constrained_optimizer
+from . import constrained_optimizer
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
@@ -260,11 +261,12 @@ class _ExternalRegretOptimizer(constrained_optimizer.ConstrainedOptimizer):
     multipliers_gradient = standard_ops.cast(constraints, multipliers.dtype)
 
     update_ops = []
+    self_optimizer = self.optimizer._optimizer
     if self.constraint_optimizer is None:
       # If we don't have a separate constraint_optimizer, then we use
       # self._optimizer for both the update of the model parameters, and that of
       # the internal state.
-      grads_and_vars = self.optimizer.compute_gradients(
+      grads_and_vars = self_optimizer.compute_gradients(
           loss,
           var_list=var_list,
           gate_gradients=gate_gradients,
@@ -274,12 +276,12 @@ class _ExternalRegretOptimizer(constrained_optimizer.ConstrainedOptimizer):
       grads_and_vars.append(
           self._constraint_grad_and_var(state, multipliers_gradient))
       update_ops.append(
-          self.optimizer.apply_gradients(grads_and_vars, name="update"))
+          self_optimizer.apply_gradients(grads_and_vars, name="update"))
     else:
       # If we have a separate constraint_optimizer, then we use self._optimizer
       # for the update of the model parameters, and self._constraint_optimizer
       # for that of the internal state.
-      grads_and_vars = self.optimizer.compute_gradients(
+      grads_and_vars = self_optimizer.compute_gradients(
           loss,
           var_list=var_list,
           gate_gradients=gate_gradients,
@@ -296,7 +298,7 @@ class _ExternalRegretOptimizer(constrained_optimizer.ConstrainedOptimizer):
       ]
       with ops.control_dependencies(gradients):
         update_ops.append(
-            self.optimizer.apply_gradients(grads_and_vars, name="update"))
+            self_optimizer.apply_gradients(grads_and_vars, name="update"))
         update_ops.append(
             self.constraint_optimizer.apply_gradients(
                 multiplier_grads_and_vars, name="optimizer_state_update"))
