@@ -57,16 +57,16 @@ class LinearModel (Model):
 	State prediction
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
-		mk = np.matmul(self.F, xk) + np.matmul(self.B, u)
-		Vk = np.matmul(Sk, self.F.T)
-		Sk = np.matmul(self.F, Vk) + self.Q
+		M = np.matmul(self.F, xk) + np.matmul(self.B, u)
+		V = np.matmul(Sk, self.F.T)
+		S = np.matmul(self.F, V) + self.Q
 		if not grad:
-			return (mk, Sk, Vk) if cross_cov else (mk, Sk)
+			return (M, S, V) if cross_cov else (M, S)
 		# Compute gradients
 		D, Du = self.B.shape
-		dXdx = self.F
-		dXds = np.zeros(( self.D, self.D, self.D ))
-		dXdu = self.B
+		dMdx = self.F
+		dMds = np.zeros(( self.D, self.D, self.D ))
+		dMdu = self.B
 		dSdx = np.zeros(( self.D, self.D, self.D ))
 		dSds = np.zeros(( self.D, self.D, self.D, self.D ))
 		for d1 in range( self.D ):
@@ -74,11 +74,11 @@ class LinearModel (Model):
 				dSds[d1,d2] = self.F[d1][:,None] * self.F[d2][None,:]
 		dSdu = np.zeros(( self.D, self.D, self.Du ))
 		if not cross_cov:
-			return mk, Sk, dXdx, dXds, dXdu, dSdx, dSds, dSdu
+			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
 		# Compute cross-covariance
 		dVdx = np.zeros(( self.D, self.D, self.D ))
 		dVds = np.zeros(( self.D, self.D, self.D, self.D ))
 		for d1 in range( self.D ):
 			dVds[d1,:,d1] = self.F
 		dVdu = np.zeros(( self.D, self.D, self.Du ))
-		return mk, Sk, Vk, dXdx, dXds, dXdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu
+		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu
