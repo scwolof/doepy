@@ -22,10 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import tensorflow as tf
-from gpflow import settings
-
-dtype = settings.float_type
+import numpy as np
 
 class DesignCriterion:
 	def __call__ (self, M, S):
@@ -41,18 +38,19 @@ class HR (DesignCriterion):
 	"""
 	def __init__ (self, W=None):
 		DesignCriterion.__init__(self)
+		# Scale dimensions
 		self.W = W
 
 	def _criterion (self, M, S):
 		num_models = len( M )
 		if self.W is None:
-			self.W = tf.eye(tf.shape(M[0])[0], dtype=dtype)
+			self.W = np.eye( M[0].shape[0] )
 
 		dc = 0.
 		for i in range( num_models - 1 ):
 			for j in range( i+1, num_models ):
-				m   = ( M[i] - M[j] )[:,None]
-				dc += tf.matmul(m, tf.matmul(self.W, m), transpose_a=True)
+				m   = ( M[i] - M[j] )
+				dc += np.matmul(m, np.matmul(self.W, m))
 		return dc
 
 
@@ -71,22 +69,23 @@ class BH (DesignCriterion):
 	"""
 	def __init__ (self, w=None):
 		DesignCriterion.__init__(self)
+		# Model probability weights
 		self.w = w
 
 	def _criterion (self, M, S):
 		num_models = len( M )
 		if self.w is None:
-			self.w = tf.constant([1]*num_models, dtype=dtype)
-		E = tf.shape(M[0])[0]
+			self.w = np.ones( num_models )
+		E = M[0].shape[0]
 
-		iS = [tf.linalg.inv(s2) for s2 in S]
+		iS = [np.linalg.inv(s2) for s2 in S]
 		dc = 0
 		for i in range( num_models - 1 ):
 			for j in range( i+1, num_models ):
-				t1  = tf.trace( tf.matmul(S[i], iS[j]) + tf.matmul(S[j], iS[i])\
-							 - 2 * tf.eye( E, dtype=dtype ) )
-				m   = ( M[i] - M[j] )[:,None]
-				t2  = tf.matmul(m, tf.matmul(iS[i] + iS[j], m), transpose_a=True)
+				t1  = np.trace( np.matmul(S[i], iS[j]) + np.matmul(S[j], iS[i])\
+							 - 2 * np.eye( E ) )
+				m   = ( M[i] - M[j] )
+				t2  = np.matmul(m, np.matmul(iS[i] + iS[j], m))
 				dc += self.w[i] * self.w[j] * (t1 + t2)
 		return 0.5 * dc
 
@@ -110,7 +109,7 @@ class BF (DesignCriterion):
 	"""
 	def __init__ (self, noise_var):
 		DesignCriterion.__init__(self)
-		self.noise_var = tf.constant(noise_var, dtype=dtype)
+		self.noise_var = noise_var
 
 	def _criterion (self, M, S):
 		num_models = len( M )
@@ -118,10 +117,10 @@ class BF (DesignCriterion):
 		dc = 0
 		for i in range( num_models - 1 ):
 			for j in range( i+1, num_models ):
-				iS  = tf.linalg.inv(S[i] + S[j])
-				t1  = tf.trace( tf.matmul(self.noise_var, iS) )
-				m   = ( M[i] - M[j] )[:,None]
-				t2  = tf.matmul(m, tf.matmul(iS, m), transpose_a=True)
+				iS  = np.linalg.inv(S[i] + S[j])
+				t1  = np.trace( np.matmul(self.noise_var, iS) )
+				m   = ( M[i] - M[j] )
+				t2  = np.matmul(m, np.matmul(iS, m))
 				dc += t1 + t2
 		return dc
 
@@ -131,8 +130,8 @@ class AW (DesignCriterion):
 	Modified Expected Akaike Weights Decision Criterion.
 
 	- Michalik et al. (2010). 
-		Optimal Experimental Design for Discriminating Numerous 
-		Model Candidates: The AWDC Criterion.
+		Optimal experimental design for discriminating numerous 
+		model candidates: The AWDC criterion.
 		Ind. Eng. Chem. Res. 49:913-919
 	"""
 	def __init__ (self, w=None, num_param=None):
@@ -162,7 +161,9 @@ class JR (DesignCriterion):
 	"""
 	Quadratic Jensen-Renyi divergence.
 
-	- Olofsson et al. (Future publication)
+	- Olofsson et al. (2019)
+		GPdoemd: a Python package for design of experiments for model discrimination
+		arXiv pre-print 1810.02561 (https://arxiv.org/abs/1810.02561)
 	"""
 	def __init__ (self, w=None):
 		DesignCriterion.__init__(self)
@@ -171,14 +172,14 @@ class JR (DesignCriterion):
 	def _criterion (self, M, S):
 		num_models = len( M )
 		if self.w is None:
-			self.w = tf.constant([1]*num_models, dtype=dtype)
-		E = 0.5 * tf.shape( M[0], out_type=dtype )[0]
+			self.w = np.ones( num_models )
+		E = 0.5 * M[0].shape[0]
 
 		# Pre-compute
-		iS  = [tf.linalg.inv( s2 ) for s2 in S]
-		dS  = [tf.linalg.det( s2 ) for s2 in S]
-		ldS = [tf.log( ds2 ) for ds2 in dS]
-		log2pi = tf.constant( 1.8378770664093453, dtype=dtype )
+		iS  = [np.linalg.inv( s2 ) for s2 in S]
+		dS  = [np.linalg.det( s2 ) for s2 in S]
+		ldS = [np.log( ds2 ) for ds2 in dS]
+		log2pi = 1.8378770664093453
 
 		""" Sum of entropies """
 		T1 = 0.
@@ -189,36 +190,34 @@ class JR (DesignCriterion):
 		""" Entropy of sum """
 		# Diagonal elements: (i,i)
 		T2 = 0.
-		pw = tf.pow( tf.constant(2.,dtype=dtype), E)
+		pw = 2**E
 		for i in range( num_models ):
-			T2 += self.w[i]**2 / ( pw * tf.sqrt(dS[i]) )
+			T2 += self.w[i]**2 / ( pw * np.sqrt(dS[i]) )
 		
 		# Off-diagonal elements: (i,j)
 		for i in range( num_models ):
 			# mu_i^T * inv(Si) * mu_i 
-			mi     = M[i][:,None]
-			iSmi   = tf.matmul(iS[i], mi)
-			miiSmi = tf.matmul(mi, iSmi, transpose_a=True)
+			iSmi   = tf.matmul(iS[i], M[i])
+			miiSmi = tf.matmul(M[i], iSmi)
 
 			for j in range( i+1, num_models ):
 				# mu_j^T * inv(Sj) * mu_j
-				mj     = M[j][:,None]
-				iSmj   = tf.matmul(iS[j], mj)
-				mjiSmj = tf.matmul(mj, iSmj, transpose_a=True)
+				iSmj   = tf.matmul(iS[j], M[j])
+				mjiSmj = tf.matmul(M[j], iSmj)
 
 				# inv( inv(Si) + inv(Sj) )
 				iSiS  = iS[i] + iS[j]
-				iiSiS = tf.linalg.inv( iSiS )
-				liSiS = tf.log( tf.linalg.det( iSiS ))
+				iiSiS = np.linalg.inv( iSiS )
+				liSiS = np.log( np.linalg.det( iSiS ))
 
 				# mu_ij^T * inv( inv(Si) + inv(Sj) ) * mu_ij
 				mij   = iSmi + iSmj
-				iiSSj = tf.matmul(mij, tf.matmul(iiSiS, mij), transpose_a=True)
+				iiSSj = np.matmul(mij, np.matmul(iiSiS, mij))
 
 				phi = miiSmi + mjiSmj - iiSSj + ldS[i] + ldS[j] + liSiS
-				T2 += 2 * self.w[i] * self.w[j] * tf.exp( -0.5 * phi )
+				T2 += 2 * self.w[i] * self.w[j] * np.exp( -0.5 * phi )
 
-		T2 = E * log2pi - tf.log( T2 )
+		T2 = E * log2pi - np.log( T2 )
 		return T2 - T1
 
 
