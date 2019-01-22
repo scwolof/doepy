@@ -1,4 +1,4 @@
-
+#
 # Copyright 2017 Artem Artemev @awav
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+#
+####### FORKED FROM GPFLOW ########
 
 import sys
 
@@ -20,18 +23,16 @@ import tensorflow as tf
 from gpflow.training import optimizer
 from gpflow import misc
 from gpflow.actions import Optimization
-#from gpflow.models.model import Model
-#from tensorflow.contrib import constrained_optimization as tfco
 from . import tf_contrib_constrained_optimization_forked as tfco
 
 _REGISTERED_TENSORFLOW_CONSTRAINED_OPTIMIZERS = {}
 
-class _TensorFlowOptimizer(optimizer.Optimizer):
+class _GPdodeOptimizer:
 	def __init__(self, *args, **kwargs):
 		name = self.__class__.__name__
 		tf_optimizer = _get_registered_optimizer(name)
 		self._model = None
-		super().__init__()
+		#super().__init__()
 		self._optimizer = tf_optimizer(*args, **kwargs)
 		self._minimize_operation = None
 	
@@ -48,12 +49,11 @@ class _TensorFlowOptimizer(optimizer.Optimizer):
 			:return: Tensorflow optimization tensor or operation.
 		"""
 		session = model.enquire_session(session)
-		objective = model.objective
+		objective = model #.objective
 		full_var_list = self._gen_var_list(model, var_list)
 		# Create optimizer variables before initialization.
 		with session.as_default():
-			minimize = self.optimizer.minimize(
-									objective, var_list=full_var_list, **kwargs)
+			minimize = self.optimizer.minimize(model, var_list=full_var_list, **kwargs)
 			model.initialize(session=session)
 			self._initialize_optimizer(session)
 			return minimize
@@ -104,23 +104,32 @@ class _TensorFlowOptimizer(optimizer.Optimizer):
 		:type step_callback: Callable[[], None]
 		:param kwargs: This is a dictionary of extra parameters for session run method.
 		"""
+
+		"""
 		opt = self.make_optimize_action(model,
 					session=session,
 					var_list=var_list,
 					feed_dict=feed_dict, **kwargs)
+		"""
+		var_list = self.optimizer._optimizer._optimizer.variables()
+		misc.initialize_variables(var_list, session=session, force=False)
 
-		self._model = opt.model
-		self._minimize_operation = opt.optimizer_tensor
-
-		session = model.enquire_session(session)
+		#self._model = opt.model
+		#self._minimize_operation = opt.optimizer_tensor
+		train_op = self.optimizer.minimize(model)
+		session  = model.enquire_session(session)
 		with session.as_default():
 			for step in range(maxiter):
+				"""
 				opt()
 				if step_callback is not None:
 					step_callback(step)
-
+				"""
+				session.run(train_op)
+		"""
 		if anchor:
 			opt.model.anchor(session)
+		"""
 
 	def _initialize_optimizer(self, session: tf.Session):
 		var_list = self.optimizer.variables()
@@ -152,7 +161,7 @@ def _get_registered_optimizer(name):
 	return tf_optimizer
 
 def _register_optimizer(name, optimizer_type):
-	gp_optimizer = type(name, (_TensorFlowOptimizer, ), {})
+	gp_optimizer = type(name, (_GPdodeOptimizer, ), {})
 	_REGISTERED_TENSORFLOW_CONSTRAINED_OPTIMIZERS[name] = optimizer_type
 	module = sys.modules[__name__]
 	setattr(module, name, gp_optimizer)
