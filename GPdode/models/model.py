@@ -140,33 +140,44 @@ class Model:
 		vk = mvn( np.zeros(self.E), self.R )
 		return xk1+wk, yk+vk
 
-	def predict_x_dist (self, xk, Pk, U, cross_cov=False):
+	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False):
 		"""
 		Input state posterior mean xk and variance Pk, and controls U 
-			p( x_k | y_{1 : k} ) = N( xk, Pk )
+			p( x_k | y_{1 : k} ) = N( xk, Sk )
 		Outputs mean and variance of state prediction
-			p( x_{k+1} | y_{1 : k} ) = int[ f(x, u) * N(x | xk, Pk) ] dx
+			p( x_{k+1} | y_{1 : k} ) = int[ f(x, u) * N(x | xk, Sk) ] dx
 
 		If U.ndim == 1, one-step prediction.
 		If U.ndim == 2, multi-step prediction
 		"""
 		if U.ndim == 1:
-			return self._predict_x_dist(xk, Pk, U, cross_cov=cross_cov)
+			return self._predict_x_dist(xk, Sk, U, cross_cov=cross_cov, grad=grad)
 
 		n = len(U)
 		X = np.zeros(( n+1, self.D ))
-		P = np.zeros(( n+1, self.D, self.D ))
+		S = np.zeros(( n+1, self.D, self.D ))
 
 		X[0] = xk
-		P[0] = Pk
+		S[0] = Sk
+		if not grad:
+			for k in range(n):
+				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
+			return X, S
+		dXdx = np.zeros(( n, self.E, self.D ))
+		dXdp = np.zeros(( n, self.E, self.D, self.D ))
+		dXdu = np.zeros(( n, self.E, self.Du ))
+		dSdx = np.zeros(( n, self.E, self.E, self.D ))
+		dSdp = np.zeros(( n, self.E, self.E, self.D, self.D ))
+		dSdu = np.zeros(( n, self.E, self.E, self.Du ))
 		for k in range(n):
-			X[k+1], P[k+1] = self._predict_x_dist(X[k], P[k], U[k])
-		return X, P
+			X[k], S[k], dXdx[k], dXdp[k], dXdu[k], dSdx[k], dSdp[k], dSdu[k] \
+			                = self._predict_x_dist(X[k], S[k], U[k], grad=grad)
+		return X, S, dXdx, dXdp, dXdu, dSdx, dSdp, dSdu
 
-	def _predict_x_dist (self, xk, Pk, u, cross_cov=False):
+	def _predict_x_dist (self, xk, Pk, u, cross_cov=False, grad=False):
 		raise NotImplementedError
 
-	def predict_y_dist (self, m, S):
+	def predict_y_dist (self, m, S, grad=False):
 		"""
 		Input state mean m and variance S
 			p( x_k | y_{1 : T} ) = N( m, S )
@@ -177,18 +188,37 @@ class Model:
 		If m.ndim == 2, multi-step prediction
 		"""
 		if m.ndim == 1:
-			return self._predict_y_dist(m, S)
+			return self._predict_y_dist(m, S, grad=grad)
 
 		n = len(m)
 		Y = np.zeros(( n, self.E ))
 		P = np.zeros(( n, self.E, self.E ))
+		if not grad:
+			for k in range(n):
+				Y[k], P[k] = self._predict_y_dist(m[k], S[k], grad=grad)
+			return Y, P
+		dYdm = np.zeros(( n, self.E, self.D ))
+		dYds = np.zeros(( n, self.E, self.D, self.D ))
+		dPdm = np.zeros(( n, self.E, self.E, self.D ))
+		dPds = np.zeros(( n, self.E, self.E, self.D, self.D ))
 		for k in range(n):
-			Y[k], P[k] = self._predict_y_dist(m[k], S[k])
-		return Y, P
+			Y[k], P[k], dYdm[k], dYds[k], dPdm[k], dPds[k] \
+			                = self._predict_y_dist(m[k], S[k], grad=grad)
+		return Y, P, dYdm, dYds, dPdm, dPds
 
-	def _predict_y_dist (self, m, S):
+	def _predict_y_dist (self, m, S, grad=False):
 		mu = np.matmul(self.H, m)
 		s2 = np.matmul(self.H, np.matmul(S, self.H.T) ) + self.R
+		if grad:
+			E, D   = self.H.shape
+			dmudm  = self.H
+			dmudS  = np.zeros(( E, D, D ))
+			ds2dmu = np.zeros(( E, E, D ))
+			ds2dS  = np.zeros(( E, E, D, D ))
+			for e1 in range( E ):
+				for e2 in range( E ):
+					ds2dS[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
+			return mu, s2, dmudm, dmudS, ds2dmu, ds2dS
 		return mu, s2
 
 	def filter (self, yk, m, S):
