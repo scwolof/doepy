@@ -163,12 +163,12 @@ class Model:
 			for k in range(n):
 				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
 			return X, S
-		dXdx = np.zeros(( n, self.E, self.D ))
-		dXdp = np.zeros(( n, self.E, self.D, self.D ))
-		dXdu = np.zeros(( n, self.E, self.Du ))
-		dSdx = np.zeros(( n, self.E, self.E, self.D ))
-		dSdp = np.zeros(( n, self.E, self.E, self.D, self.D ))
-		dSdu = np.zeros(( n, self.E, self.E, self.Du ))
+		dXdx = np.zeros(( n, self.D, self.D ))
+		dXdp = np.zeros(( n, self.D, self.D, self.D ))
+		dXdu = np.zeros(( n, self.D, self.Du ))
+		dSdx = np.zeros(( n, self.D, self.D, self.D ))
+		dSdp = np.zeros(( n, self.D, self.D, self.D, self.D ))
+		dSdu = np.zeros(( n, self.D, self.D, self.Du ))
 		for k in range(n):
 			X[k], S[k], dXdx[k], dXdp[k], dXdu[k], dSdx[k], dSdp[k], dSdu[k] \
 			                = self._predict_x_dist(X[k], S[k], U[k], grad=grad)
