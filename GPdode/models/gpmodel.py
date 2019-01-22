@@ -1,42 +1,21 @@
 
-from numpy import ndarray, max, min
-import tensorflow as tf
+import numpy as np 
 
-from gpflow import settings
-from gpflow.params import DataHolder, ParamList
-from gpflow.decors import name_scope, params_as_tensors, autoflow
-from gpflow.conditionals import base_conditional
-from gpflow.logdensities import multivariate_normal
+from GPy.models import GPRegression
+from GPy.kern import RBF
 
-from gpflow.models import Model as GPflowModel
-from gpflow.kernels import RBF
-from gpflow.training import ScipyOptimizer
-from gpflow.transforms import Logistic
-from gpflow.likelihoods import Gaussian
-from gpflow.mean_functions import Zero
+from .. import moment_match
+from .model import Model
+from ..transform import BoxTransform, MeanTransform
 
-import logging
 
-from .model import FlowModel
-from ..utils import block_diagonal
-
-# Float type
-dtype = settings.float_type
-
-class GPModel (GPflowModel, FlowModel):
-	def __init__ (self, f, Xtrain, Ytrain, H, Q, R, delta_transition=False, \
-			name='name', noise_var=1e-6, noise_trainable=False):
-		r"""
-		f : transition function x_{k+1} = f(x_k, u_k). We put a GP prior on f.
-		Xtrain : N x (D+Du) GP training inputs [ x_k^T, u_k^T ]
-		Ytrain : N x D  GP training observations [ x_{k+1}^T ]
+class GPModel (Model):
+	def __init__ (self, f, H, Q, R, delta_transition=True, transform=False):
+		"""
+		f : transition function x_{k+1} = f(x_k, u_k)
 		H : observation matrix
 		Q : process noise covariance matrix
 		R : measurement noise covariance
-
-		name : Name for GPflow model, must be unique
-		noise_var : Noise variance for GP model
-		noise_trainable : Boolean, optimise noise variance hyperparameter
 
 		Model:
 			x_{k+1} = g( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
@@ -47,209 +26,226 @@ class GPModel (GPflowModel, FlowModel):
 		else
 			g( x_k, u_k ) = f( x_k, u_k )
 
+		transform : transform [x,u] -> [0, 1]^dim, and ( x_{k+1} - m) / std
+		## WARNING - transform suffering problems ##
+
+		We put a GP prior on f
 		"""
-		GPflowModel.__init__(self, name=name)
-		FlowModel.__init__(self, f, H, Q, R)
+		super(GPModel, self).__init__(f, H, Q, R)
 
+		self.gps = []
+		self.hyp = []
+		self.transform = transform
+		if self.transform:
+			self.z_transform  = None
+			self.t_transform  = None
 		self.delta_transition = delta_transition
-		# Dimensions
-		self.num_data   = Xtrain.shape[0]
-		self.num_input  = Xtrain.shape[1]
-		self.num_latent = Ytrain.shape[1]
-		max_lengthscale = 10 * ( max(Xtrain, axis=0) - min(Xtrain, axis=0) )
-		self.Du = self.num_input - self.D
-		# Training data
-		if isinstance(Xtrain, ndarray):
-			Xtrain = DataHolder(Xtrain)
-		if isinstance(Ytrain, ndarray):
-			Ytrain = DataHolder(Ytrain)
-		self.X, self.Y = Xtrain, Ytrain
-		# Independent covariance functions
-		kerns = [ RBF(self.num_input, ARD=True) for _ in range(self.num_latent) ]
-		for maxl, kern in zip(max_lengthscale, kerns):
-			kern.lengthscales.transform = Logistic(0,maxl)
-		self.kerns = ParamList(kerns)
-		# Gaussian likelihoods
-		likelihoods = [ Gaussian(noise_var) for _ in range(self.num_latent) ]
-		for lkh in likelihoods:
-			lkh.trainable = noise_trainable
-		self.likelihoods = ParamList(likelihoods)
-		# Mean functions
-		self.mean_functions = Zero(output_dim=1)
-
-	def _build (self):
-		# Turn off annoying warning message
-		logger = logging.getLogger('gpflow.logdensities')
-		logger.setLevel(level=logging.ERROR)
-		# Build
-		super()._build()
-		# Turn warning messages back on again
-		logger.setLevel(level=logging.WARNING)
-
-	@name_scope('likelihood')
-	@params_as_tensors
-	def _build_likelihood (self):
-		m = self.mean_functions(self.X)
-		logpdf = 0
-		for e, kern, lklhood in zip(range(self.num_latent), 
-									self.kerns._list, 
-									self.likelihoods._list):
-			K = kern.K(self.X) + lklhood.variance * \
-					tf.eye(self.num_data, dtype=dtype)
-			L = tf.cholesky( K )
-			t = tf.reshape(self.Y[:,e], [self.num_data,1])
-			logpdf = logpdf + tf.reduce_sum( multivariate_normal(t, m, L) )
-		return logpdf
-
-	@name_scope('predict')
-	@params_as_tensors
-	def _build_predict (self, Xnew, full_cov=False):
-		m      = self.mean_functions(self.X)
-		f_mean = None
-		f_var  = None
-		for e, kern, lklhood in zip(range(self.num_latent), 
-									self.kerns._list, 
-									self.likelihoods._list):
-			Kmn   = kern.K(self.X, Xnew)
-			Kmm   = kern.K(self.X) + lklhood.variance * tf.eye(self.num_data, dtype=dtype)
-			Knn   = kern.K(Xnew) if full_cov else kern.Kdiag(Xnew)
-			t     = tf.reshape(self.Y[:,e], [self.num_data,1]) - m
-			mu,s2 = base_conditional(Kmn, Kmm, Knn, t, full_cov=full_cov, white=False)  
-			
-			""" Mean """
-			mu = mu + self.mean_functions(Xnew)
-			if f_mean is None:
-				f_mean = mu
-			else:
-				f_mean = tf.concat([f_mean, mu], 1)
-			""" Variance """
-			if f_var is None:
-				f_var = s2
-			else:
-				if full_cov:
-					f_var = tf.concat([f_var, s2], 0)
-				else:
-					f_var = tf.concat([f_var, s2], 1)
-		return f_mean, f_var
 
 	"""
 	Train GP surrogates
 	"""
-	def optimise (self):
-		# Make sure model is compiled
-		self.compile()
-		# Optimize hyperparameters
-		tf.logging.set_verbosity(tf.logging.WARN)
-		ScipyOptimizer().minimize(self)
-		tf.logging.set_verbosity(tf.logging.INFO)
-	# American spelling
-	def optimize (self):
-		self.optimise()
+	def train (self, X, U, Z=None, hyp=None, noise_var=1e-6):
+		assert len(U) == len(X)
+		
+		if Z is None:
+			if self.delta_transition:
+				Z = np.array([ self.f(x,u) - x for x,u in zip(X,U) ])
+			else:
+				Z = np.array([ self.f(x,u) for x,u in zip(X,U) ])
+		Tt, Zt = self.training_data(np.c_[ X, U ], Z)
+
+		self.hyp = []
+		for d in range(self.D):
+			dim = Tt.shape[1]
+			gp  = GPRegression(Tt, Zt[:,[d]], RBF(input_dim=dim, ARD=True))
+			if hyp is None:
+				# Constrain noise variance
+				gp.Gaussian_noise.variance.constrain_fixed(noise_var)
+				# Constrain lengthscales
+				LS = np.max(Tt, axis=0) - np.min(Tt, axis=0)
+				for dd in range(dim):
+					gp.kern.lengthscale[[dd]].constrain_bounded(
+						lower=0., upper=10.*LS[dd], warning=False )
+				gp.optimize()
+			else:
+				gp.update_model(False)
+				gp.initialize_parameter()
+				gp[:] = hyp[d]
+				gp.update_model(True)
+			self.hyp.append( gp[:] )
+			self.gps.append( gp )
+
+	"""
+	Transform training data
+	"""
+	def training_data (self, T, Z):
+		if not self.transform:
+			return T, Z
+		self.z_transform = MeanTransform( Z )
+		self.t_transform = BoxTransform( T )
+		return self.t_transform(T), self.z_transform(Z)
 
 	"""
 	State prediction
 	"""
-	@name_scope('predict_x')
-	@params_as_tensors
-	def _build_predict_x_dist (self, xk, Pk, u):
-		tnew = tf.concat( [xk, u], axis=0 )
-		Pnew = block_diagonal([Pk, tf.zeros((self.Du, self.Du), dtype=dtype)])
+	def _predict_x_dist (self, xk, Pk, u, cross_cov=False):
+		if self.transform:
+			assert self.z_transform is not None
+			assert self.t_transform is not None
+			assert not self.gps == []
 
-		M, S, V = self._build_predict_uncertain_input(tnew, Pnew)
+		xku  = np.array( xk.tolist() + u.tolist() )
+		tnew = xku.copy()
+		dim  = len( tnew )
+		Pnew = np.zeros((dim, dim))
+		Pnew[:self.D, :self.D] = Pk
+		if self.transform:
+			tnew = self.t_transform(tnew)
+			Pnew = self.t_transform.cov(Pnew)
+
+		M, S, V = self.moment_match(tnew, Pnew)
+				
+		if self.transform:
+			M  = self.z_transform(M, back=True)
+			S  = self.z_transform.cov(S, back=True)
+			V *= self.t_transform.q[:,None] * self.z_transform.q[None,:]
+		V = V[:self.D]
 
 		mu_k = M
 		S_k  = S + self.Q
-		V_k  = V[:self.D]
 		if self.delta_transition:
 			mu_k += xk
-			S_k  += Pk + V_k + tf.transpose(V_k)
-			V_k  += Pk
-		return mu_k, S_k, V_k
-	
-	"""
-	Exact moment matching for uncertain input with RBF kernels.
-	"""
-	@name_scope('predict_uncertain_input')
-	@params_as_tensors
-	def _build_predict_uncertain_input (self, Xmean, Xvar):
+			S_k  += Pk + V + V.T
+			V    += Pk
+		return (mu_k, S_k, V) if cross_cov else (mu_k, S_k)
+
+
+	def moment_match (self, mu, s2, grad=False):
+		"""
+		Inputs
+			mu    input mean [ D ]
+			s2    input covariance [ D, D ]
+		"""
+		assert not self.gps == []
+		# Memory allocation
+		D    = len( mu )             # Number of input dimensions
+		E    = len( self.gps )       # Number of target dimensions
+		N    = len( self.gps[0].X )  # Number of training data points
+
+		logk = np.zeros( (N, E) )
+		M    = np.zeros( (E) )     # Marginal mean, E_{x,f}[ f(x) ]
+		S    = np.zeros( (E, E) )  # Marginal covariance, V_{x,f}[ f(x) ]
+		V    = np.zeros( (D, E) )  # Input-output covariance, cov[ x, f(x) ]
+
+		if grad:
+			dMdm = np.zeros( (E, D) )       # output mean by input mean
+			dMds = np.zeros( (E, D, D) )    # output mean by input covariance
+			dSdm = np.zeros( (E, E, D) )    # output covariance by input mean
+			dSds = np.zeros( (E, E, D, D) ) # output covariance by input covar
+			dVdm = np.zeros( (D, E, D) )    # output covariance by input mean
+			dVds = np.zeros( (D, E, D, D) ) # output covariance by input covar
+
+
 		# Centralise training inputs
-		inp = self.X - Xmean
+		inp = self.gps[0].X - mu[None,:]
 
-		# Woodbury inverses (K + s2*I)^-1
-		iKs = []
-		for kern, lklhood in zip(self.kerns._list, self.likelihoods._list):
-			Kmm = kern.K(self.X) + lklhood.variance * tf.eye(self.num_data, dtype=dtype)
-			Lm  = tf.cholesky( Kmm )
-			A   = tf.matrix_triangular_solve(Lm, tf.eye(self.num_data, dtype=dtype), lower=True)
-			A   = tf.matrix_triangular_solve(tf.transpose(Lm), A, lower=False)
-			iKs.append( A )
-		
-		# Woodbury vectors (K + s2*I)^-1 (Y - M(X))
-		beta = []
-		for i, kern in zip(range(self.num_latent), self.kerns._list):
-			y = tf.reshape(self.Y[:,i], [self.num_data,1]) - self.mean_functions(self.X)
-			A = tf.matmul(iKs[i], y)
-			beta.append( A )
+		def maha (a, b, Q):
+			aQ, bQ = np.matmul(a,Q), np.matmul(b,Q)
+			asum = np.expand_dims(np.sum(aQ*a, axis=1), 1)
+			bsum = np.expand_dims(np.sum(bQ*b, axis=1), 0)
+			ab   = np.matmul(aQ, b.T)
+			return (asum+bsum) - 2*ab
+
+		# 1) Compute predicted mean and input-output covariance
+		for i in range(E):
+			# First, some useful intermediate terms
+			beta  = self.gps[i].posterior.woodbury_vector
+			lengp = np.array(self.gps[i].kern.lengthscale)
+			rho2  = np.array(self.gps[i].kern.variance)[0]
+			logk[:,i] = np.log(rho2) - 0.5 * np.sum( (inp/lengp)**2, axis=1 )
 			
-		logk = [ tf.log(kern.variance) - \
-				 0.5 * tf.reduce_sum( tf.div(inp, kern.lengthscales)**2, axis=1 ) \
-				for kern in self.kerns._list ]
-	
-		def mean_covar_terms ():
-			for i, kern in enumerate(self.kerns._list):
-				lengp = kern.lengthscales
-				iL = tf.diag(1. / lengp)
-				nn = tf.matmul( inp, iL )
-				B  = tf.matmul( iL, tf.matmul(Xvar, iL) ) + tf.eye( self.num_input, dtype=dtype )
-				iQ = tf.linalg.inv( B )
-				iB = tf.matmul( iL, tf.matmul(iQ, iL) )
-				xB = tf.matmul(inp, iB)
-				t  = tf.matmul( nn, iQ )
-				l  = tf.exp( -0.5 * tf.reduce_sum(nn * t, axis=1) )
-				lb = l * beta[i][:,0]
-				c  = kern.variance / tf.sqrt(tf.linalg.det(B))
-				yield c, lb, xB
-		
-		M = tf.stack([ c * tf.reduce_sum( lb ) for c,lb,_ in mean_covar_terms() ])
-		V = tf.stack([ c * tf.reduce_sum( tf.multiply(lb[:,None], tf.matmul(xB, Xvar)), axis=0 )\
-					 for c,lb,xB in mean_covar_terms()], axis=1)
-		
-		def var_terms (i,j,stop=False):
-			kerni = self.kerns._list[i]
-			lengi = 1. / tf.square( kerni.lengthscales )
-			ii    = tf.multiply(inp, lengi)
-			betai = beta[i]
-
-			kernj = self.kerns._list[j]
-			lengj = 1. / tf.square( kernj.lengthscales )
-			ij    = tf.multiply(inp, lengj)
-			betaj = beta[j]
-
-			R    = tf.matmul( Xvar, tf.diag(lengi + lengj) ) + tf.eye( self.num_input, dtype=dtype )
-			iRS  = 0.5 * tf.matmul( tf.linalg.inv(R), Xvar )
-			Q1   = logk[i][:,None] + logk[j][None,:]
+			iL = np.diag(1. / np.array(self.gps[i].kern.lengthscale))
+			nn = np.matmul( inp, iL )
+			B  = np.matmul( iL, np.matmul(s2, iL) ) + np.eye(D)
+			iQ = np.linalg.inv( B )
+			iB = np.matmul( iL, np.matmul(iQ, iL) )
+			xB = np.matmul(inp, iB)
+			t  = np.matmul( nn, iQ )
+			l  = np.exp( -0.5 * np.sum(nn * t, axis=1) )
+			lb = l * beta[:,0]
+			c  = rho2 / np.sqrt(np.linalg.det(B))
+			M[i] = c * np.sum( lb )
+			Vi = c * np.sum( lb[:,None] * xB, axis=0 )
+			V[:,i] = np.matmul(s2, Vi )
+			if grad:
+				tL  = np.matmul( t, iL )
+				tlb = tL * lb[:,None]
+				dMdm[i] = c * np.matmul(tL.T, lb)
+				dMds[i] = 0.5 * ( c * np.matmul(tL.T, tlb) - iB*M[i])
+				dVdm[:,i,:] = 2 * np.matmul(s2, dMds[i])
+				for d in range(D):
+					dVids = 0.5 * (c*np.matmul((xB*xB[:,[d]]).T, tlb) - iB*Vi[d]
+								- Vi[:,None]*iB[[d],:] - iB[:,[d]]*Vi[None,:] )
+					for j in range(D):
+						dVds[j,i] += s2[j,d] * dVids
+					dVds[d,i,d] += Vi
 			
-			iiR   = tf.matmul(ii, iRS)
-			ijR   = tf.matmul(ij, iRS)            
-			asum = tf.reduce_sum( iiR*ii, axis=1 )[:,tf.newaxis]
-			bsum = tf.reduce_sum( ijR*ij, axis=1 )[tf.newaxis,:]
-			ab   = tf.matmul( iiR, tf.transpose(ij) )
-			Q2   = asum + bsum + 2*ab
-			
-			Q    = tf.exp(Q1 + Q2)
-			isdR = 1. / tf.sqrt( tf.linalg.det(R) )
+		# 2) predictive covariance matrix
+		# 2a) non-central moments
+		for i in range(E):
+			lengi = 1. / np.array(self.gps[i].kern.lengthscale)**2
+			ii    = inp * lengi
+			betai = self.gps[i].posterior.woodbury_vector
 
-			A = tf.einsum('ik,jk->ij', betai, betaj)
-			if i == j: # Incorporate model uncertainty
-				A -= iKs[i]
-			A = tf.multiply(A, Q)
+			#for j in range(i+1):
+			for j in range(i,E):
+				lengj = 1. / np.array(self.gps[j].kern.lengthscale)**2
+				ij    = inp * lengj
+				betaj = self.gps[j].posterior.woodbury_vector
 
-			s = tf.multiply(tf.reduce_sum( A ), isdR)
-			if i == j:
-				s += kerni.variance
-			return s
-		
-		S  = tf.convert_to_tensor([ [ var_terms(i,j) for j in range(self.num_latent) ] \
-								   for i in range(self.num_latent) ], dtype=dtype)
-		S -= tf.multiply(M[:,None], M[None,:])
+				R    = np.matmul(s2, np.diag(lengi + lengj)) + np.eye(D)
+				
+				detR = np.linalg.det(R)
+				iR   = np.linalg.inv(R)
+				iRS  = np.matmul(iR, s2)
+				Q1   = logk[:,[i]] + logk[:,[j]].T
+				Q2   = maha(ii, -ij, 0.5*iRS)
+				Q    = np.exp(Q1 + Q2)
+				isdR = 1. / np.sqrt( detR )
+
+				A = betai * betaj.T
+				if i == 0 and j == 1:
+					added_return = [R, iRS, Q1, ii, ij, Q2, Q, isdR, A.copy()]
+				if i == j:
+					# Incorporate model uncertainty
+					A -= self.gps[i].posterior.woodbury_inv
+				A = A * Q
+				
+				S[i,j] = np.sum( A ) * isdR
+				S[j,i] = S[i,j]
+				
+				if grad:
+					zi  = np.matmul(ii, iR)
+					zj  = np.matmul(ij, iR)
+					r,T = np.zeros(D), np.zeros((D,D))
+					for d in range(D):
+						B    = (zi[:,[d]] + zj[:,[d]].T ) * A
+						r[d] = np.sum(B) * isdR
+						T[d, :d+1] = np.sum(np.matmul(zi[:,:d+1].T, B), axis=1)\
+									+ np.sum(np.matmul(B, zj[:,:d+1]), axis=0)
+						T[:d+1, d] = T[d,:d+1]
+					
+					r -= M[i]*dMdm[j] + M[j]*dMdm[i] 
+					dSdm[i,j], dSdm[j,i] = r, r
+					T  = 0.5 * (isdR * T - S[i,j] * iR*(lengi + lengj)[:,None])
+					T -= M[i]*dMds[j] + M[j]*dMds[i] 
+					dSds[i,j], dSds[j,i] = T, T
+					
+			S[i,i] += np.array(self.gps[i].kern.variance)[0]
+		# 2b) centralise moments
+		S -= M[:,None] * M[None,:]
+
+		if grad:
+			return M, S, V, dMdm, dMds, dSdm, dSds, dVdm, dVds
 		return M, S, V
+
