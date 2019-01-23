@@ -4,13 +4,12 @@ import numpy as np
 from GPy.models import GPRegression
 from GPy.kern import RBF
 
-from .. import moment_match
 from .model import Model
 from ..transform import BoxTransform, MeanTransform
 
 
 class GPModel (Model):
-	def __init__ (self, f, H, Q, R, delta_transition=True, transform=False):
+	def __init__ (self, f, H, Q, R, delta_transition=False, transform=False):
 		"""
 		f : transition function x_{k+1} = f(x_k, u_k)
 		H : observation matrix
