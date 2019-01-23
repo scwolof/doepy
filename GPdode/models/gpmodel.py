@@ -9,7 +9,7 @@ from ..transform import BoxTransform, MeanTransform
 
 
 class GPModel (Model):
-	def __init__ (self, f, H, Q, R, delta_transition=False, transform=False):
+	def __init__ (self, f, H, Q, R, delta_transition=False, transform=True):
 		"""
 		f : transition function x_{k+1} = f(x_k, u_k)
 		H : observation matrix
