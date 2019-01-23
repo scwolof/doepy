@@ -33,7 +33,7 @@ class LinearModel (Model):
 	def F (self, F):
 		assert isinstance(F, np.ndarray)
 		assert F.shape == (self.D, self.D)
-		self._F  = F
+		self._F  = F.copy()
 	@F.deleter
 	def F (self):
 		del self._F
@@ -48,7 +48,7 @@ class LinearModel (Model):
 	def B (self, B):
 		assert isinstance(B, np.ndarray)
 		assert B.shape[0] == self.D
-		self._B  = B
+		self._B  = B.copy()
 	@B.deleter
 	def B (self):
 		del self._B

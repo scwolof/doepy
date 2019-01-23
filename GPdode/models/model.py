@@ -51,7 +51,7 @@ class Model:
 	def H (self, H):
 		assert isinstance(H, np.ndarray)
 		assert H.ndim == 2
-		self._H = H
+		self._H = H.copy()
 	@H.deleter
 	def H (self):
 		del self._H
@@ -65,7 +65,7 @@ class Model:
 	@Q.setter
 	def Q (self, Q):
 		assert is_symmetric_matrix(Q)
-		self._Q = Q
+		self._Q = Q.copy()
 	@Q.deleter
 	def Q (self):
 		del self._Q
@@ -79,7 +79,7 @@ class Model:
 	@R.setter
 	def R (self, R):
 		assert is_symmetric_matrix(R)
-		self._R = R
+		self._R = R.copy()
 	@R.deleter
 	def R (self):
 		del self._R
