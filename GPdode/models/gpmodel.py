@@ -135,7 +135,7 @@ class GPModel (Model):
 			dSds = dSds[:,:,:self.D,:self.D]
 			dVdx = dVdt[:self.D,:,:self.D]
 			dVdu = dVdt[:self.D,:,self.D:]
-			dVds = dVds[:self.D,:,self.D:,self.D:]
+			dVds = dVds[:self.D,:,:self.D,:self.D]
 
 		# Process noise variance
 		S += self.Q
