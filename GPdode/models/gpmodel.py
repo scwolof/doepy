@@ -51,7 +51,7 @@ class GPModel (Model):
 				Z = np.array([ self.f(x,u) - x for x,u in zip(X,U) ])
 			else:
 				Z = np.array([ self.f(x,u) for x,u in zip(X,U) ])
-		Tt, Zt = self.training_data(np.c_[ X, U ], Z)
+		Tt, Zt = self._training_data(np.c_[ X, U ], Z)
 
 		self.hyp = []
 		for d in range(self.D):
@@ -77,7 +77,7 @@ class GPModel (Model):
 	"""
 	Transform training data
 	"""
-	def training_data (self, T, Z):
+	def _training_data (self, T, Z):
 		if not self.transform:
 			return T, Z
 		self.z_transform = MeanTransform( Z )
