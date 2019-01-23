@@ -103,7 +103,7 @@ class GPModel (Model):
 			Snew = self.t_transform.cov(Snew)
 
 		# Moment matching
-		res = self.moment_match(tnew, Snew, grad=grad)
+		res = self._moment_match(tnew, Snew, grad=grad)
 		if grad:
 			M, S, V, dMdt, dMds, dSdt, dSds, dVdt, dVds = res
 		else:
@@ -160,7 +160,7 @@ class GPModel (Model):
 		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu
 
 
-	def moment_match (self, mu, s2, grad=False):
+	def _moment_match (self, mu, s2, grad=False):
 		"""
 		Inputs
 			mu    input mean [ D ]
