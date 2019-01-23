@@ -1,2 +1,2 @@
 numpy>=1.7
-gpflow>=1.2,<2.0
+GPy

@@ -17,7 +17,7 @@ setup(
     version=about['__version__'],
     url='https://github.com/scwolof/GPdode',
     packages=find_packages(exclude=['tests']),
-    install_requires=['numpy>=1.7', 'gpflow>=1.2,<2.0'],
-    setup_requires=['numpy>=1.7', 'gpflow>=1.2,<2.0'],
+    install_requires=['numpy>=1.7', 'GPy'],
+    setup_requires=['numpy>=1.7', 'GPy'],
     tests_require=['pytest-runner','pytest', 'pytest-cov'],
 )
