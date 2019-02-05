@@ -7,6 +7,7 @@ from GPy.kern import RBF
 from .model import Model
 from ..transform import BoxTransform, MeanTransform
 
+from pdb import set_trace as st
 
 class GPModel (Model):
 	def __init__ (self, f, H, Q, R, delta_transition=False, transform=True):
@@ -165,8 +166,6 @@ class GPModel (Model):
 		Inputs
 			mu    input mean [ D ]
 			s2    input covariance [ D, D ]
-
-		WARNING: SOME UNCERTAINTY IN CORRECTNESS OF GRADIENTS
 		"""
 		assert not self.gps == []
 		# Memory allocation
@@ -187,50 +186,47 @@ class GPModel (Model):
 			dVdm = np.zeros( (D, E, D) )    # output covariance by input mean
 			dVds = np.zeros( (D, E, D, D) ) # output covariance by input covar
 
-
 		# Centralise training inputs
 		inp = self.gps[0].X - mu[None,:]
 
-		def maha (a, b, Q):
-			aQ, bQ = np.matmul(a,Q), np.matmul(b,Q)
-			asum = np.expand_dims(np.sum(aQ*a, axis=1), 1)
-			bsum = np.expand_dims(np.sum(bQ*b, axis=1), 0)
-			ab   = np.matmul(aQ, b.T)
-			return (asum+bsum) - 2*ab
-
-		# 1) Compute predicted mean and input-output covariance
-		for i in range(E):
+		for e in range( E ):
 			# First, some useful intermediate terms
-			beta  = self.gps[i].posterior.woodbury_vector
-			lengp = np.array(self.gps[i].kern.lengthscale)
-			rho2  = np.array(self.gps[i].kern.variance)[0]
-			logk[:,i] = np.log(rho2) - 0.5 * np.sum( (inp/lengp)**2, axis=1 )
+			beta = self.gps[e].posterior.woodbury_vector.flatten()
+			leng = np.array(self.gps[e].kern.lengthscale)
+			rho2 = np.array(self.gps[e].kern.variance)[0]
 			
-			iL = np.diag(1. / np.array(self.gps[i].kern.lengthscale))
-			nn = np.matmul( inp, iL )
-			B  = np.matmul( iL, np.matmul(s2, iL) ) + np.eye(D)
-			iQ = np.linalg.inv( B )
-			iB = np.matmul( iL, np.matmul(iQ, iL) )
-			xB = np.matmul(inp, iB)
-			t  = np.matmul( nn, iQ )
-			l  = np.exp( -0.5 * np.sum(nn * t, axis=1) )
-			lb = l * beta[:,0]
-			c  = rho2 / np.sqrt(np.linalg.det(B))
-			M[i] = c * np.sum( lb )
-			Vi = c * np.sum( lb[:,None] * xB, axis=0 )
-			V[:,i] = np.matmul(s2, Vi )
+			iL    = np.diag(1. / leng**2 )
+			is2L  = np.linalg.inv( s2 + np.diag(leng**2) )
+			is2LX = np.matmul(inp, is2L)
+			q     = np.exp(-0.5 * np.sum(inp * is2LX, axis=1))
+			bq    = beta * q
+			s2LI  = np.matmul(s2, iL) + np.eye(D)
+			c     = rho2 / np.sqrt(np.linalg.det( s2LI ))
+			
+			sumbq = np.sum( bq )
+			M[e]  = c * sumbq
 			if grad:
-				tL  = np.matmul( t, iL )
-				tlb = tL * lb[:,None]
-				dMdm[i] = c * np.matmul(tL.T, lb)
-				dMds[i] = 0.5 * ( c * np.matmul(tL.T, tlb) - iB*M[i])
-				dVdm[:,i,:] = 2 * np.matmul(s2, dMds[i])
-				for d in range(D):
-					dVids = 0.5 * (c*np.matmul((xB*xB[:,[d]]).T, tlb) - iB*Vi[d]
-								- Vi[:,None]*iB[[d],:] - iB[:,[d]]*Vi[None,:] )
-					for j in range(D):
-						dVds[j,i] += s2[j,d] * dVids
-					dVds[d,i,d] += Vi
+				dbqdm   = bq[:,None] * is2LX
+				dbqds   = 0.5 * bq[:,None,None]*is2LX[:,:,None]*is2LX[:,None,:]
+				dcds    = -0.5 * np.matmul( np.linalg.inv(s2LI).T, iL )
+				dMdm[e] = c * np.sum( dbqdm, axis=0 )
+				dMds[e] = c * ( np.sum( dbqds, axis=0 ) + dcds * sumbq )
+
+			is2LXs2   = np.matmul(is2LX, s2.T)
+			sumbqSS   = np.sum( bq[:,None] * is2LXs2, axis=0 )
+			V[:,e]    = c * np.sum( bq[:,None] * is2LXs2, axis=0 )
+			dVdm[:,e] = 2 * np.matmul(s2, dMds[e])
+			if grad:
+				dVds[:,e] =  dcds * V[:,e,None,None]
+				s2is2L = np.matmul(s2, is2L)
+				for d1 in range(D):
+					dis2LXs2ds = - is2LX[:,None,d1,None] * s2is2L[None,:]
+					dis2LXs2ds[:,d1] += is2LX
+					dsumbqSSds = np.sum( dbqds[:,None,d1] * is2LXs2[:,:,None] \
+									+ bq[:,None,None] * dis2LXs2ds, axis=0 )
+					dVds[:,e,d1] += c * dsumbqSSds
+				
+			logk[:,e] = np.log(rho2) - 0.5 * np.sum( (inp/leng)**2, axis=1 )
 			
 		# 2) predictive covariance matrix
 		# 2a) non-central moments
@@ -244,20 +240,17 @@ class GPModel (Model):
 				lengj = 1. / np.array(self.gps[j].kern.lengthscale)**2
 				ij    = inp * lengj
 				betaj = self.gps[j].posterior.woodbury_vector
-
-				R    = np.matmul(s2, np.diag(lengi + lengj)) + np.eye(D)
 				
-				detR = np.linalg.det(R)
-				iR   = np.linalg.inv(R)
-				iRS  = np.matmul(iR, s2)
-				Q1   = logk[:,[i]] + logk[:,[j]].T
-				Q2   = maha(ii, -ij, 0.5*iRS)
-				Q    = np.exp(Q1 + Q2)
-				isdR = 1. / np.sqrt( detR )
+				R     = np.matmul(s2, np.diag(lengi + lengj)) + np.eye(D)
+				iR    = np.linalg.inv( R )
+				isdR  = 1. / np.sqrt( np.linalg.det(R) )
+				iRs2  = np.matmul( iR, s2 )
+				zi,zj = np.matmul(ii,iRs2), np.matmul(ij,iRs2)
+				i1,j2 = np.sum(zi*ii,1), np.sum(zj*ij,1)
+				zRSz  = (i1[:,None] + j2[None,:]) + 2*np.matmul(zi,ij.T)
+				Q     = np.exp( (logk[:,[i]] + logk[:,j]) + 0.5*zRSz )
 
 				A = betai * betaj.T
-				if i == 0 and j == 1:
-					added_return = [R, iRS, Q1, ii, ij, Q2, Q, isdR, A.copy()]
 				if i == j:
 					# Incorporate model uncertainty
 					A -= self.gps[i].posterior.woodbury_inv
@@ -278,10 +271,10 @@ class GPModel (Model):
 						T[:d+1, d] = T[d,:d+1]
 					
 					r -= M[i]*dMdm[j] + M[j]*dMdm[i] 
-					dSdm[i,j], dSdm[j,i] = r, r
+					dSdm[i,j], dSdm[j,i] = r.copy(), r.copy()
 					T  = 0.5 * (isdR * T - S[i,j] * iR*(lengi + lengj)[:,None])
 					T -= M[i]*dMds[j] + M[j]*dMds[i] 
-					dSds[i,j], dSds[j,i] = T, T
+					dSds[i,j], dSds[j,i] = T.copy(), T.copy()
 					
 			S[i,i] += np.array(self.gps[i].kern.variance)[0]
 		# 2b) centralise moments
@@ -290,4 +283,3 @@ class GPModel (Model):
 		if grad:
 			return M, S, V, dMdm, dMds, dSdm, dSds, dVdm, dVds
 		return M, S, V
-
