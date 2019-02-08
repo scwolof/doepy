@@ -74,9 +74,9 @@ class LinearModel (Model):
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
 		# Compute cross-covariance
-		dVdx = np.zeros([self.num_states]*3)
-		dVds = np.zeros([self.num_states]*4)
-		for d1 in range( self.num_states ):
-			dVds[d1,:,d1] = self.F.copy()
-		dVdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
-		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu
+		#dVdx = np.zeros([self.num_states]*3)
+		#dVds = np.zeros([self.num_states]*4)
+		#for d1 in range( self.num_states ):
+		#	dVds[d1,:,d1] = self.F.copy()
+		#dVdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
+		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu #, dVdx, dVds, dVdu

@@ -160,7 +160,7 @@ class GPModel (Model):
 			return (M, S, V) if cross_cov else (M, S)
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
-		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu
+		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu #, dVdx, dVds, dVdu
 
 
 	def _moment_match (self, mu, s2, grad=False):
