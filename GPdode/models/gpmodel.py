@@ -10,7 +10,7 @@ from ..transform import BoxTransform, MeanTransform
 from pdb import set_trace as st
 
 class GPModel (Model):
-	def __init__ (self, f, H, Q, R, delta_transition=False, transform=True):
+	def __init__ (self, f, H, Q, R, num_inputs, delta_transition=False, transform=True):
 		"""
 		f : transition function x_{k+1} = f(x_k, u_k)
 		H : observation matrix
@@ -31,7 +31,7 @@ class GPModel (Model):
 
 		We put a GP prior on f
 		"""
-		super(GPModel, self).__init__(f, H, Q, R)
+		super(GPModel, self).__init__(f, H, Q, R, num_inputs)
 
 		self.gps = []
 		self.hyp = []
@@ -92,7 +92,7 @@ class GPModel (Model):
 		if self.transform:
 			assert self.z_transform is not None
 			assert self.t_transform is not None
-			assert not self.gps == []
+		assert not self.gps == [], 'GP surrogate(s) not trained yet.'
 
 		# Input mean and variance
 		tnew = np.array( xk.tolist() + u.tolist() )
@@ -112,18 +112,20 @@ class GPModel (Model):
 				
 		# Transform back
 		if self.transform:
-			qt, qz = self.t_transform.q, self.z_transform.q
-			M  = self.z_transform(M, back=True)
-			S  = self.z_transform.cov(S, back=True)
-			V *= qt[:,None] * qz[None,:]
+			qt,qz = self.t_transform.q, self.z_transform.q
+			M     = self.z_transform(M, back=True)
+			S     = self.z_transform.cov(S, back=True)
+			qtqz  = qt[:,None] * qz[None,:]
+			V    *= qtqz
 			if grad:
+				qtqt  = qt[:,None] * qt[None,:]
+				qzqz  = qz[:,None] * qz[None,:]
 				dMdt *= qz[:,None] / qt[None,:]
-				dMds *= qz[:,None,None] / ( qt[None,:,None] * qt[None,None,:] )
-				dSdt *= ( qz[:,None,None] * qz[None,:,None] ) / qt[None,None,:]
-				qtqt  = qt[None,None,:,None] * qt[None,None,None,:]
-				dSds *= ( qz[:,None,None,None] * qz[None,:,None,None] ) / qtqt
-				dVdt *= ( qt[:,None,None] * qz[None,:,None] ) / qt[None,None,:]
-				dVds *= ( qt[:,None,None,None] * qz[None,:,None,None] ) / qtqt
+				dMds *= qz[:,None,None] / qtqt[None,:,:]
+				dSdt *= qzqz[:,:,None] / qt[None,None,:]
+				dSds *= qzqz[:,:,None,None] / qtqt[None,None,:,:]
+				dVdt *= qtqz[:,:,None] / qt[None,None,:]
+				dVds *= qtqz[:,:,None,None] / qtqt[None,None,:,:]
 
 		# Separate state and control dimensions again
 		V = V[:self.num_states]
@@ -215,8 +217,8 @@ class GPModel (Model):
 			is2LXs2   = np.matmul(is2LX, s2.T)
 			sumbqSS   = np.sum( bq[:,None] * is2LXs2, axis=0 )
 			V[:,e]    = c * np.sum( bq[:,None] * is2LXs2, axis=0 )
-			dVdm[:,e] = 2 * np.matmul(s2, dMds[e])
 			if grad:
+				dVdm[:,e] = 2 * np.matmul(s2, dMds[e])
 				dVds[:,e] =  dcds * V[:,e,None,None]
 				s2is2L = np.matmul(s2, is2L)
 				for d1 in range(D):
