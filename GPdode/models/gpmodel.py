@@ -55,7 +55,7 @@ class GPModel (Model):
 		Tt, Zt = self._training_data(np.c_[ X, U ], Z)
 
 		self.hyp = []
-		for d in range(self.D):
+		for d in range(self.num_states):
 			dim = Tt.shape[1]
 			gp  = GPRegression(Tt, Zt[:,[d]], RBF(input_dim=dim, ARD=True))
 			if hyp is None:
@@ -98,7 +98,7 @@ class GPModel (Model):
 		tnew = np.array( xk.tolist() + u.tolist() )
 		dim  = len( tnew )
 		Snew = np.zeros((dim, dim))
-		Snew[:self.D, :self.D] = Sk
+		Snew[:self.num_states, :self.num_states] = Sk
 		if self.transform:
 			tnew = self.t_transform(tnew)
 			Snew = self.t_transform.cov(Snew)
@@ -126,17 +126,17 @@ class GPModel (Model):
 				dVds *= ( qt[:,None,None,None] * qz[None,:,None,None] ) / qtqt
 
 		# Separate state and control dimensions again
-		V = V[:self.D]
+		V = V[:self.num_states]
 		if grad:
-			dMdx = dMdt[:,:self.D]
-			dMdu = dMdt[:,self.D:]
-			dMds = dMds[:,:self.D,:self.D]
-			dSdx = dSdt[:,:,:self.D]
-			dSdu = dSdt[:,:,self.D:]
-			dSds = dSds[:,:,:self.D,:self.D]
-			dVdx = dVdt[:self.D,:,:self.D]
-			dVdu = dVdt[:self.D,:,self.D:]
-			dVds = dVds[:self.D,:,:self.D,:self.D]
+			dMdx = dMdt[:,:self.num_states]
+			dMdu = dMdt[:,self.num_states:]
+			dMds = dMds[:,:self.num_states,:self.num_states]
+			dSdx = dSdt[:,:,:self.num_states]
+			dSdu = dSdt[:,:,self.num_states:]
+			dSds = dSds[:,:,:self.num_states,:self.num_states]
+			dVdx = dVdt[:self.num_states,:,:self.num_states]
+			dVdu = dVdt[:self.num_states,:,self.num_states:]
+			dVds = dVds[:self.num_states,:,:self.num_states,:self.num_states]
 
 		# Process noise variance
 		S += self.Q
@@ -146,11 +146,11 @@ class GPModel (Model):
 			S += Sk + V + V.T
 			V += Sk
 			if grad:
-				dMdx += np.eye(self.D)
+				dMdx += np.eye(self.num_states)
 				dSdx += dVdx + np.swapaxes(dVdx,0,1)
 				dSds += dVds + np.swapaxes(dVds,0,1)
-				for d1 in range(self.D):
-					for d2 in range(self.D):
+				for d1 in range(self.num_states):
+					for d2 in range(self.num_states):
 						dSds[d1,d2,d1,d2] += 1
 						dVds[d1,d2,d1,d2] += 1
 		# Returns

@@ -17,11 +17,10 @@ class LinearModel (Model):
 				y_k = H * x_k  +  v_k,               v_k ~ N(0, R)
 		"""
 		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
-		super(LinearModel, self).__init__(f, H, Q, R)
+		super(LinearModel, self).__init__(f, H, Q, R, B.shape[1])
 
 		self.F  = F
 		self.B  = B
-		self.Du = self.B.shape[1]
 
 	"""
 	Transition matrix
@@ -32,7 +31,7 @@ class LinearModel (Model):
 	@F.setter
 	def F (self, F):
 		assert isinstance(F, np.ndarray)
-		assert F.shape == (self.D, self.D)
+		assert F.shape == (self.num_states, self.num_states)
 		self._F  = F.copy()
 	@F.deleter
 	def F (self):
@@ -47,7 +46,7 @@ class LinearModel (Model):
 	@B.setter
 	def B (self, B):
 		assert isinstance(B, np.ndarray)
-		assert B.shape[0] == self.D
+		assert B.shape[0] == self.num_states
 		self._B  = B.copy()
 	@B.deleter
 	def B (self):
@@ -63,22 +62,21 @@ class LinearModel (Model):
 		if not grad:
 			return (M, S, V) if cross_cov else (M, S)
 		# Compute gradients
-		D, Du = self.B.shape
 		dMdx = self.F.copy()
-		dMds = np.zeros(( self.D, self.D, self.D ))
+		dMds = np.zeros([self.num_states]*3)
 		dMdu = self.B.copy()
-		dSdx = np.zeros(( self.D, self.D, self.D ))
-		dSds = np.zeros(( self.D, self.D, self.D, self.D ))
-		for d1 in range( self.D ):
-			for d2 in range( self.D ):
+		dSdx = np.zeros([self.num_states]*3)
+		dSds = np.zeros([self.num_states]*4)
+		for d1 in range( self.num_states ):
+			for d2 in range( self.num_states ):
 				dSds[d1,d2] = self.F[d1][:,None] * self.F[d2][None,:]
-		dSdu = np.zeros(( self.D, self.D, self.Du ))
+		dSdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
 		# Compute cross-covariance
-		dVdx = np.zeros(( self.D, self.D, self.D ))
-		dVds = np.zeros(( self.D, self.D, self.D, self.D ))
-		for d1 in range( self.D ):
+		dVdx = np.zeros([self.num_states]*3)
+		dVds = np.zeros([self.num_states]*4)
+		for d1 in range( self.num_states ):
 			dVds[d1,:,d1] = self.F.copy()
-		dVdu = np.zeros(( self.D, self.D, self.Du ))
+		dVdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
 		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu, dVdx, dVds, dVdu

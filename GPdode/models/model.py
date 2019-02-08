@@ -2,10 +2,10 @@
 import numpy as np 
 from numpy.random import multivariate_normal as mvn
 
-from md_code.utils import is_symmetric_matrix, is_pos_def
+from ..utils import is_symmetric_matrix, is_pos_def
 
 class Model:
-	def __init__ (self, f, H, Q, R):
+	def __init__ (self, f, H, Q, R, num_inputs):
 		"""
 		f : transition function x_{k+1} = f(x_k, u_k)
 		H : observation matrix
@@ -21,11 +21,14 @@ class Model:
 		self.Q  = Q
 		self.R  = R
 
-		self.D = self.Q.shape[0]
-		assert self.D == self.H.shape[1]
+		self.num_inputs = num_inputs
+		assert isinstance(self.num_inputs, int) and self.num_inputs > 0
 
-		self.E = self.H.shape[0]
-		assert self.E == self.R.shape[0]
+		self.num_states = self.Q.shape[0]
+		assert self.num_states == self.H.shape[1]
+
+		self.num_meas = self.H.shape[0]
+		assert self.num_meas == self.R.shape[0]
 
 	"""
 	Transition function
@@ -100,11 +103,11 @@ class Model:
 			return self._predict(x0, U)
 
 		n = len(U)
-		X = np.zeros(( n+1, self.D ))
-		Y = np.zeros((   n, self.E ))
+		X = np.zeros(( n+1, self.num_states ))
+		Y = np.zeros((   n, self.num_meas ))
 
 		X[0] = x0
-		for k in range(n):
+		for k in range( n ):
 			X[k+1], Y[k] = self._predict(X[k], U[k])
 		return X, Y
 
@@ -126,8 +129,8 @@ class Model:
 			return self._sample(x0, U)
 
 		n = len(U)
-		X = np.zeros(( n+1, self.D ))
-		Y = np.zeros((   n, self.E ))
+		X = np.zeros(( n+1, self.num_states ))
+		Y = np.zeros((   n, self.num_meas ))
 
 		X[0] = x0
 		for k in range(n):
@@ -136,8 +139,8 @@ class Model:
 
 	def _sample (self, x, u):
 		xk1, yk = self.predict(x, u)
-		wk = mvn( np.zeros(self.D), self.Q )
-		vk = mvn( np.zeros(self.E), self.R )
+		wk = mvn( np.zeros(self.num_states), self.Q )
+		vk = mvn( np.zeros(self.num_meas), self.R )
 		return xk1+wk, yk+vk
 
 	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False):
@@ -154,8 +157,8 @@ class Model:
 			return self._predict_x_dist(xk, Sk, U, cross_cov=cross_cov, grad=grad)
 
 		n = len(U)
-		X = np.zeros(( n+1, self.D ))
-		S = np.zeros(( n+1, self.D, self.D ))
+		X = np.zeros(( n+1, self.num_states ))
+		S = np.zeros(( n+1, self.num_states, self.num_states ))
 
 		X[0] = xk
 		S[0] = Sk
@@ -163,12 +166,12 @@ class Model:
 			for k in range(n):
 				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
 			return X, S
-		dXdx = np.zeros(( n, self.D, self.D ))
-		dXds = np.zeros(( n, self.D, self.D, self.D ))
-		dXdu = np.zeros(( n, self.D, self.Du ))
-		dSdx = np.zeros(( n, self.D, self.D, self.D ))
-		dSds = np.zeros(( n, self.D, self.D, self.D, self.D ))
-		dSdu = np.zeros(( n, self.D, self.D, self.Du ))
+		dXdx = np.zeros(( n, self.num_states, self.num_states ))
+		dXds = np.zeros(( n, self.num_states, self.num_states, self.num_states ))
+		dXdu = np.zeros(( n, self.num_states, self.num_inputs ))
+		dSdx = np.zeros(( n, self.num_states, self.num_states, self.num_states ))
+		dSds = np.zeros([ n ] + [ self.num_states ] * 4 )
+		dSdu = np.zeros(( n, self.num_states, self.num_states, self.num_inputs ))
 		for k in range(n):
 			X[k], S[k], dXdx[k], dXds[k], dXdu[k], dSdx[k], dSds[k], dSdu[k] \
 			                = self._predict_x_dist(X[k], S[k], U[k], grad=grad)
@@ -191,16 +194,16 @@ class Model:
 			return self._predict_y_dist(m, S, grad=grad)
 
 		n = len(m)
-		Y = np.zeros(( n, self.E ))
-		P = np.zeros(( n, self.E, self.E ))
+		Y = np.zeros(( n, self.num_meas ))
+		P = np.zeros(( n, self.num_meas, self.num_meas ))
 		if not grad:
 			for k in range(n):
 				Y[k], P[k] = self._predict_y_dist(m[k], S[k], grad=grad)
 			return Y, P
-		dYdm = np.zeros(( n, self.E, self.D ))
-		dYds = np.zeros(( n, self.E, self.D, self.D ))
-		dPdm = np.zeros(( n, self.E, self.E, self.D ))
-		dPds = np.zeros(( n, self.E, self.E, self.D, self.D ))
+		dYdm = np.zeros(( n, self.num_meas, self.num_states ))
+		dYds = np.zeros(( n, self.num_meas, self.num_states, self.num_states ))
+		dPdm = np.zeros(( n, self.num_meas, self.num_meas, self.num_states ))
+		dPds = np.zeros( [n] + [self.num_meas]*2 + [self.num_states]*2 )
 		for k in range(n):
 			Y[k], P[k], dYdm[k], dYds[k], dPdm[k], dPds[k] \
 			                = self._predict_y_dist(m[k], S[k], grad=grad)
@@ -210,13 +213,12 @@ class Model:
 		mu = np.matmul(self.H, m)
 		s2 = np.matmul(self.H, np.matmul(S, self.H.T) ) + self.R
 		if grad:
-			E, D   = self.H.shape
 			dmudm  = self.H
-			dmudS  = np.zeros(( E, D, D ))
-			ds2dmu = np.zeros(( E, E, D ))
-			ds2dS  = np.zeros(( E, E, D, D ))
-			for e1 in range( E ):
-				for e2 in range( E ):
+			dmudS  = np.zeros( [self.num_meas] + [self.num_states]*2 )
+			ds2dmu = np.zeros( [self.num_meas]*2 + [self.num_states] )
+			ds2dS  = np.zeros( [self.num_meas]*2 + [self.num_states]*2 )
+			for e1 in range(  self.num_meas ):
+				for e2 in range(  self.num_meas ):
 					ds2dS[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
 			return mu, s2, dmudm, dmudS, ds2dmu, ds2dS
 		return mu, s2
@@ -238,8 +240,8 @@ class Model:
 			return self._filter(Y, m, S)
 
 		n = len(yk)
-		X = np.zeros(( n, self.D ))
-		P = np.zeros(( n, self.D, self.D ))
+		X = np.zeros(( n, self.num_states ))
+		P = np.zeros(( n, self.num_states, self.num_states ))
 		for k in range(n):
 			X[k], P[k] = self._filter(yk[k], m[k], S[k])
 		return X, P
@@ -266,8 +268,8 @@ class Model:
 		P  : [ n+1, D, D]
 		"""
 		n = len(Y)
-		X = np.zeros(( n, self.D ))
-		P = np.zeros(( n, self.D, self.D ))
+		X = np.zeros(( n, self.num_states ))
+		P = np.zeros(( n, self.num_states, self.num_states ))
 		m, S = x0, P0
 		for k in range( n ):
 			X[k], P[k] = self._filter(Y[k], m, S)
@@ -281,8 +283,8 @@ class Model:
 		P = [P_1, ..., P_n] with controls U = [u_1, ..., u_n]
 		"""
 		n  = len(X)
-		Xs = np.zeros(( n, self.D ))
-		Ps = np.zeros(( n, self.D, self.D ))
+		Xs = np.zeros(( n, self.num_states ))
+		Ps = np.zeros(( n, self.num_states, self.num_states ))
 		Xs[-1] = X[-1]
 		Ps[-1] = P[-1]
 		for k in np.arange(1, n)[::-1]:
