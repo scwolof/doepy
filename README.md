@@ -1,5 +1,5 @@
 
-![](https://github.com/scwolof/doepy/blob/dev/docs/doepy_logo.png?raw=true)
+![](https://github.com/scwolof/doepy/blob/master/docs/doepy_logo.png?raw=true)
 
 # Python package for design of experiments.
 
