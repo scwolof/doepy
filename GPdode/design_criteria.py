@@ -25,8 +25,20 @@ SOFTWARE.
 import numpy as np
 
 class DesignCriterion:
-	def __call__ (self, M, S):
-		return self._criterion(M, S)
+	def __call__ (self, M, S, grad=False):
+		"""
+		Input:
+		M	[num_models x num_meas]              Matrix of predictive means
+		S	[num_models x num_meas x num_meas]   Matrix of predictive covariances
+		grad                                     Return gradients wrt M and S
+
+		Output:
+		dc		Design criterion for M, S
+		dcdM	Gradient d dc / d M
+		dcdS	Gradient d dc / d S
+		"""
+		return self._criterion(M, S, grad=grad)
+
 
 class HR (DesignCriterion):
 	"""
@@ -39,19 +51,31 @@ class HR (DesignCriterion):
 	def __init__ (self, W=None):
 		DesignCriterion.__init__(self)
 		# Scale dimensions
-		self.W = W
+		self.W = W 
 
-	def _criterion (self, M, S):
-		num_models = len( M )
+	def _criterion (self, M, S, grad=False):
+		num_models, num_meas = M.shape
+		if grad:
+			dcdM = np.zeros((num_models, num_meas))
+			dcdS = np.zeros((num_models, num_meas, num_meas))
+
 		if self.W is None:
 			self.W = np.eye( M[0].shape[0] )
 
 		dc = 0.
 		for i in range( num_models - 1 ):
 			for j in range( i+1, num_models ):
-				m   = ( M[i] - M[j] )
-				dc += np.matmul(m, np.matmul(self.W, m))
-		return dc
+				m = M[i] - M[j]
+				if self.W.ndim == 1:
+					Wm = self.W * m
+				else:
+					Wm = np.matmul(self.W, m)
+				dc += np.sum(m * Wm)
+				if grad:
+					dcdM[i] += 2*Wm
+					dcdM[j] -= 2*Wm
+
+		return dc if not grad else (dc, dcdM, dcdS)
 
 
 class BH (DesignCriterion):
@@ -72,22 +96,37 @@ class BH (DesignCriterion):
 		# Model probability weights
 		self.w = w
 
-	def _criterion (self, M, S):
-		num_models = len( M )
+	def _criterion (self, M, S, grad=False):
+		num_models, num_meas = M.shape
+		if grad:
+			dcdM = np.zeros((num_models, num_meas))
+			dcdS = np.zeros((num_models, num_meas, num_meas))
+
 		if self.w is None:
 			self.w = np.ones( num_models )
-		E = M[0].shape[0]
 
-		iS = [np.linalg.inv(s2) for s2 in S]
+		iS = np.linalg.inv( S )
 		dc = 0
 		for i in range( num_models - 1 ):
 			for j in range( i+1, num_models ):
-				t1  = np.trace( np.matmul(S[i], iS[j]) + np.matmul(S[j], iS[i])\
-							 - 2 * np.eye( E ) )
-				m   = ( M[i] - M[j] )
-				t2  = np.matmul(m, np.matmul(iS[i] + iS[j], m))
-				dc += self.w[i] * self.w[j] * (t1 + t2)
-		return 0.5 * dc
+				SSj = np.matmul(S[i], iS[j])
+				SSi = np.matmul(S[j], iS[i])
+				t1  = np.trace( SSj + SSi - 2 * np.eye( num_meas ) )
+				m   = M[i] - M[j]
+				Wm  = np.matmul(iS[i] + iS[j], m)
+				t2  = np.sum(m * Wm)
+				wij = self.w[i] * self.w[j]
+				dc += wij * (t1 + t2)
+				if grad:
+					dcdM[i] += wij * Wm
+					dcdM[j] -= wij * Wm
+					mm = m[:,None]*m[None,:]
+					dcdS[i] += wij * ( iS[j].T - np.matmul(iS[i], SSi).T\
+								 - np.matmul( iS[i], np.matmul( mm, iS[i].T ) ))
+					dcdS[j] += wij * ( iS[i].T - np.matmul(iS[j], SSj).T\
+								 - np.matmul( iS[j], np.matmul( mm, iS[j].T ) ))
+
+		return 0.5*dc if not grad else (0.5*dc, dcdM, 0.5*dcdS)
 
 
 class BF (DesignCriterion):
@@ -111,18 +150,29 @@ class BF (DesignCriterion):
 		DesignCriterion.__init__(self)
 		self.noise_var = noise_var
 
-	def _criterion (self, M, S):
-		num_models = len( M )
+	def _criterion (self, M, S, grad=False):
+		num_models, num_meas = M.shape
+		if grad:
+			dcdM = np.zeros((num_models, num_meas))
+			dcdS = np.zeros((num_models, num_meas, num_meas))
 
 		dc = 0
 		for i in range( num_models - 1 ):
 			for j in range( i+1, num_models ):
 				iS  = np.linalg.inv(S[i] + S[j])
-				t1  = np.trace( np.matmul(self.noise_var, iS) )
-				m   = ( M[i] - M[j] )
-				t2  = np.matmul(m, np.matmul(iS, m))
+				SSi = 2 * np.matmul(self.noise_var, iS)
+				t1  = np.trace( SSi )
+				m   = M[i] - M[j]
+				Wm  = np.matmul(iS, m)
+				t2  = np.sum(m * Wm )
 				dc += t1 + t2
-		return dc
+				if grad:
+					dcdM[i] += 2 * Wm
+					dcdM[j] -= 2 * Wm
+					dS = np.matmul(SSi.T + np.matmul(iS.T, m[:,None]*m[None,:]), iS.T)
+					dcdS[i] -= dS
+					dcdS[j] -= dS
+		return dc if not grad else (dc, dcdM, dcdS)
 
 
 class AW (DesignCriterion):
@@ -139,23 +189,44 @@ class AW (DesignCriterion):
 		self.w = w
 		self.num_param = num_param
 
-	def _criterion (self, M, S):
-		num_models = len( M )
-		if self.w is None:
-			self.w = tf.constant([1]*num_models, dtype=dtype)
-		if self.num_param is None:
-			self.num_param = tf.constant([0]*num_models, dtype=dtype)
+	def _criterion (self, M, S, grad=False):
+		num_models, num_meas = M.shape
+		if grad:
+			dcdM = np.zeros((num_models, num_meas))
+			dcdS = np.zeros((num_models, num_meas, num_meas))
 
-		iS = [tf.linalg.inv(s2) for s2 in S]
-		dc = 0.
+		if self.w is None:
+			self.w = np.ones( num_models )
+		if self.num_param is None:
+			self.num_param = np.zeros( num_models )
+
+		iS = np.linalg.inv( S )
+		dc = np.zeros(num_models)
 		for i in range( num_models ):
-			t2 = 0.
+			if grad:
+				dcdMi = np.zeros((num_models, num_meas))
+				dcdSi = np.zeros((num_models, num_meas, num_meas))
 			for j in range( num_models ):
-				m   = ( M[i] - M[j] )[:,None]
-				t1  = tf.matmul( m, tf.matmul(iS[i], m), transpose_a=True )
-				t2 += tf.exp( -0.5 * t1 + self.num_param[i] - self.num_param[j] )
-			dc += self.w[i] / t2
-		return dc
+				if i == j:
+					dc[i] += 1
+					continue
+				m   = M[i] - M[j]
+				Wm  = np.matmul(iS[i], m)
+				t1  = np.sum(m * Wm)
+				exp = np.exp(-0.5 * t1 + self.num_param[i] - self.num_param[j])
+				dc[i] += exp
+				if grad:
+					dcdMi[i] += exp * Wm
+					dcdMi[j] -= exp * Wm
+					mm = m[:,None] * m[None,:]
+					dcdSi[i] -= exp * np.matmul(iS[i], np.matmul(mm, iS[i])).T
+			if grad:
+				wdc2  = self.w[i] / dc[i]**2
+				dcdM += wdc2 * dcdMi
+				dcdS += wdc2 * 0.5 * dcdSi
+		dc = np.sum( self.w / dc )
+		return dc if not grad else (dc, dcdM, dcdS)
+
 
 class JR (DesignCriterion):
 	"""
@@ -169,41 +240,45 @@ class JR (DesignCriterion):
 		DesignCriterion.__init__(self)
 		self.w = w
 
-	def _criterion (self, M, S):
-		num_models = len( M )
+	def _criterion (self, M, S, grad=False):
+		num_models, num_meas = M.shape
+		if grad:
+			dcdM  = np.zeros((num_models, num_meas))
+			dT2dM = np.zeros((num_models, num_meas))
+
 		if self.w is None:
 			self.w = np.ones( num_models )
-		E = 0.5 * M[0].shape[0]
 
 		# Pre-compute
-		iS  = [np.linalg.inv( s2 ) for s2 in S]
-		dS  = [np.linalg.det( s2 ) for s2 in S]
-		ldS = [np.log( ds2 ) for ds2 in dS]
-		log2pi = 1.8378770664093453
+		iS  = np.linalg.inv( S )
+		dS  = np.linalg.det( S )
+		ldS = np.log( dS )
 
 		""" Sum of entropies """
-		T1 = 0.
-		pw = E * (0.69314718056 + log2pi)
-		for i in range( num_models ):
-			T1 += self.w[i] * ( pw + 0.5 * ldS[i] )
+		T1 = np.sum( self.w * 0.5 * ( num_meas*np.log(4*np.pi) + ldS ) )
+		if grad:
+			dcdS = -0.5 * self.w[:,None,None] * iS
 
 		""" Entropy of sum """
 		# Diagonal elements: (i,i)
-		T2 = 0.
-		pw = 2**E
-		for i in range( num_models ):
-			T2 += self.w[i]**2 / ( pw * np.sqrt(dS[i]) )
+		T2 = self.w**2 / ( 2**(num_meas/2.) * np.sqrt(dS) ) 
+		if grad:
+			dT2dS = -0.5 * T2[:,None,None] * iS
+		T2 = np.sum( T2 )
 		
 		# Off-diagonal elements: (i,j)
 		for i in range( num_models ):
 			# mu_i^T * inv(Si) * mu_i 
-			iSmi   = tf.matmul(iS[i], M[i])
-			miiSmi = tf.matmul(M[i], iSmi)
+
+			iSmi   = np.matmul(iS[i], M[i])
+			miiSmi = np.matmul(M[i], iSmi)
+			if grad:
+				mimi    = M[i][:,None] * M[i][None,:]
 
 			for j in range( i+1, num_models ):
 				# mu_j^T * inv(Sj) * mu_j
-				iSmj   = tf.matmul(iS[j], M[j])
-				mjiSmj = tf.matmul(M[j], iSmj)
+				iSmj   = np.matmul(iS[j], M[j])
+				mjiSmj = np.matmul(M[j], iSmj)
 
 				# inv( inv(Si) + inv(Sj) )
 				iSiS  = iS[i] + iS[j]
@@ -215,10 +290,46 @@ class JR (DesignCriterion):
 				iiSSj = np.matmul(mij, np.matmul(iiSiS, mij))
 
 				phi = miiSmi + mjiSmj - iiSSj + ldS[i] + ldS[j] + liSiS
-				T2 += 2 * self.w[i] * self.w[j] * np.exp( -0.5 * phi )
+				exp = 2 * self.w[i] * self.w[j] * np.exp( -0.5 * phi )
+				T2 += exp
+				if grad:
+					mjmj    = M[j][:,None] * M[j][None,:]
+					iiSSij  = np.matmul(iiSiS, mij)
+					iiSiSSi = np.matmul( iiSiS, iS[i] )
+					iiSiSSj = np.matmul( iiSiS, iS[j] )
 
-		T2 = E * log2pi - np.log( T2 )
-		return T2 - T1
+					dphidmi = iSmi - np.matmul(iS[i], iiSSij)
+					dphidmj = iSmj - np.matmul(iS[j], iiSSij)
+					
+					dphidsi = -np.matmul(iS[i], np.matmul(mimi, iS[i])) + iS[i]\
+						- np.sum(np.sum(iiSiS[None,None,:,:] * \
+						( iS[i,:,None,:,None] * iS[i,None,:,None,:] ),axis=3),axis=2)
+					dphidsj = -np.matmul(iS[j], np.matmul(mjmj, iS[j])) + iS[j]\
+						- np.sum(np.sum(iiSiS[None,None,:,:] * \
+						( iS[j,:,None,:,None] * iS[j,None,:,None,:] ),axis=3),axis=2)
+
+					mmij    = mij[:,None] * mij[None,:]
+					for n in range(num_meas):
+						for m in range(num_meas):
+							Smmi = mij[:,None] * M[i]
+							Smmj = mij[:,None] * M[j]
+							dphidsi[n,m] += 2 * np.sum(iiSiS.T[:,None,:] \
+										* Smmi[:,:,None] \
+										* (iS[i][:,[m]]*iS[i][:,n])[None,:,:]) \
+										- np.sum(mmij * iiSiSSi[:,[n]] * iiSiSSi[:,m])
+							dphidsj[n,m] += 2 * np.sum(iiSiS.T[:,None,:] \
+										* Smmj[:,:,None] \
+										* (iS[j][:,[m]]*iS[j][:,n])[None,:,:]) \
+										- np.sum(mmij * iiSiSSj[:,[n]] * iiSiSSj[:,m])
+					
+					dT2dM[i] -= exp * dphidmi
+					dT2dM[j] -= exp * dphidmj
+					dT2dS[i] -= exp * 0.5 * dphidsi
+					dT2dS[j] -= exp * 0.5 * dphidsj
 
 
-
+		dc = 0.5 * num_meas * np.log(2*np.pi) - np.log( T2 ) - T1
+		if grad:
+			dcdM -= 1. / T2 * dT2dM
+			dcdS -= 1. / T2 * dT2dS
+		return dc if not grad else (dc, dcdM, dcdS)
