@@ -1,3 +1,6 @@
+
+![](https://github.com/scwolof/doepy/blob/dev/docs/doepy_logo.png?raw=true)
+
 # DoEpy
 Design of experiments package for Python
 
