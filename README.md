@@ -13,6 +13,9 @@ Does not implement:
 * Delta constraints on control input
 
 
+## Pronounciation
+We pronounce the package name as '_dopey_'
+
 ## Authors
 * **[Simon Olofsson](https://www.doc.ic.ac.uk/~so2015/)** ([scwolof](https://github.com/scwolof)) - Imperial College London
 
