@@ -69,32 +69,3 @@ class MeanStateConstraint (StateConstraint):
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
         return C if not grad else (C, dCdM, dCdS)
-
-
-
-
-class ControlConstraint:
-    def __init__ (self, num_control):
-        self.num_control = int( num_control )
-    
-class ControlDeltaConstraint (ControlConstraint):
-    def __init__ (self, Delta):
-        self.Delta = Delta
-        super().__init__( len(self.Delta) )
-    
-    def __call__ (self, U, grad=False):
-        N, D = U.shape
-        assert D == self.num_control
-        
-        C = np.zeros((2*(N-1), D))
-        C[:N-1] = self.Delta - ( U[1:]  - U[:-1] )
-        C[N-1:] = self.Delta - ( U[:-1] - U[1:] )
-        if grad:
-            dCdU = np.zeros(( 2*(N-1)*D, N*D ))
-            I1 = tuple( range((N-1)*D) )
-            I2 = tuple( range((N-1)*D) )
-            I3 = tuple( range((N-1)*D, 2*(N-1)*D) )
-            I4 = tuple( range(D,N*D) )
-            dCdU[( I1+I3, I2+I4 )] += 1.
-            dCdU[( I2+I3, I4+I2 )] -= 1.
-        return C if not grad else (C, dCdU.reshape( C.shape + U.shape ) )
