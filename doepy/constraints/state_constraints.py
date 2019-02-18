@@ -36,6 +36,10 @@ class StateConstraint:
     @property
     def has_added_variables (self):
         return False
+
+    def num_constraints (self):
+        # Number of individual constraints constructed by class
+        raise NotImplementedError 
         
     def __call__ (self, M, S, grad=False):
         """
@@ -55,6 +59,9 @@ class StateConstraint:
 class MeanStateConstraint (StateConstraint):
     def __init__ (self, bounds):
         super().__init__ (bounds)
+
+    def num_constraints (self):
+        return 2 * self.num_states
         
     def __call__ (self, M, S, grad=False):
         C = np.zeros( 2 * self.num_states )

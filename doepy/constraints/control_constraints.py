@@ -28,11 +28,22 @@ import numpy as np
 class ControlConstraint:
     def __init__ (self, num_control):
         self.num_control = int( num_control )
+
+    def num_constraints (self):
+        # Number of individual constraints constructed by class
+        raise NotImplementedError 
+
+    def __call__ (self, U, grad=False):
+        raise NotImplementedError
+
     
 class ControlDeltaConstraint (ControlConstraint):
     def __init__ (self, Delta):
         self.Delta = Delta
         super().__init__( len(self.Delta) )
+
+    def num_constraints (self, N):
+        return 2 * (N-1) * self.num_control
     
     def __call__ (self, U, grad=False):
         N, D = U.shape
