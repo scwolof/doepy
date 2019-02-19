@@ -28,19 +28,21 @@ from numpy.random import multivariate_normal as mvn
 from ..utils import is_symmetric_matrix, is_pos_def
 
 class Model:
-	def __init__ (self, f, H, Q, R, num_inputs, Su=None):
+	def __init__ (self, f, H, Q, R, x0, num_inputs, P0=None, Su=None):
 		"""
 		f  : transition function x_{k+1} = f(x_k, u_k)
 		H  : observation matrix
 		Q  : process noise covariance matrix
 		R  : measurement noise covariance
+		x0 : Initial state mean
+		P0 : Initial state covariance
 		Su : control input covariance
 
 		Model:
 			x_{k+1} = f( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
 			    y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
 		with 
-			u_k ~ N(u_k, Su)
+			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
 		"""
 		self.f  = f
 		self.H  = H
@@ -56,6 +58,9 @@ class Model:
 
 		self.num_meas = self.H.shape[0]
 		assert self.num_meas == self.R.shape[0]
+
+		self.x0 = x0
+		self.P0 = P0
 
 	"""
 	Transition function
@@ -111,11 +116,34 @@ class Model:
 	@Su.setter
 	def Su (self, Su):
 		if Su is None:
-			self._Su = np.zeros(( self.num_inputs, self.num_inputs ))
-		else:
-			assert is_symmetric_matrix(Su)
-			assert Su.shape == (self.num_inputs, self.num_inputs)
-			self._Su = Su.copy()
+			Su = np.zeros(( self.num_inputs, self.num_inputs ))
+		assert is_symmetric_matrix(Su)
+		assert Su.shape == (self.num_inputs, self.num_inputs)
+		self._Su = Su.copy()
+
+	"""
+	Initial state mean
+	"""
+	@property
+	def x0 (self):
+		return self._x0 
+	@x0.setter
+	def x0 (self, x0):
+		assert x0.shape == (self.num_states,)
+		self._x0 = x0.copy()
+
+	"""
+	Initial state covariance
+	"""
+	@property
+	def P0 (self):
+		return self._P0 
+	@P0.setter
+	def P0 (self, P0):
+		if P0 is None:
+			P0 = np.zeros(( self.num_states, self.num_states ))
+		assert is_symmetric_matrix(P0)
+		self._P0 = P0.copy()
 
 
 	"""
@@ -147,7 +175,7 @@ class Model:
 		yk  = np.matmul(self.H, x)
 		return xk1, yk
 
-	def sample (self, x0, U):
+	def sample (self, x0, U, initial_uncertainty=False):
 		"""
 		Stochastic model simulation
 			x_{k+1} = f( x_k, u_k ) + w_k
@@ -156,6 +184,8 @@ class Model:
 		If U.ndim == 1, one-step prediction
 		If U.ndim == 2, multi-step prediction
 		"""
+		x0 = x0 if not initial_uncertainty else mvn(x0, self.P0)
+
 		if U.ndim == 1:
 			return self._sample(x0, U)
 

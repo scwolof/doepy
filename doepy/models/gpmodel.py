@@ -31,7 +31,7 @@ from .model import Model
 from ..transform import BoxTransform, MeanTransform
 
 class GPModel (Model):
-	def __init__ (self, f, H, Q, R, num_inputs, Su=None, \
+	def __init__ (self, f, H, Q, R, x0, num_inputs, P0=None, Su=None, \
 				delta_transition=False, transform=True):
 		"""
 		f  : transition function x_{k+1} = f(x_k, u_k)
@@ -56,7 +56,7 @@ class GPModel (Model):
 
 		We put a GP prior on f
 		"""
-		super().__init__(f, H, Q, R, num_inputs, Su=Su)
+		super().__init__(f, H, Q, R, x0, num_inputs, P0=P0, Su=Su)
 
 		self.gps = []
 		self.hyp = []

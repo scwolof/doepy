@@ -27,7 +27,7 @@ import numpy as np
 from .model import Model
 
 class LinearModel (Model):
-	def __init__ (self, F, B, H, Q, R, Su=None):
+	def __init__ (self, F, B, H, Q, R, x0, P0=None, Su=None):
 		"""
 		F  : state transition matrix
 		B  : control matrix
@@ -43,7 +43,7 @@ class LinearModel (Model):
 			u_k ~ N(u_k, Su)
 		"""
 		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
-		super().__init__(f, H, Q, R, B.shape[1], Su=Su)
+		super().__init__(f, H, Q, R, x0, B.shape[1], P0=P0, Su=Su)
 
 		self.F  = F
 		self.B  = B
