@@ -29,7 +29,7 @@ class ControlConstraint:
     def __init__ (self, num_control):
         self.num_control = int( num_control )
 
-    def num_constraints (self):
+    def num_constraints (self, N):
         # Number of individual constraints constructed by class
         raise NotImplementedError 
 
@@ -48,16 +48,19 @@ class ControlDeltaConstraint (ControlConstraint):
     def __call__ (self, U, grad=False):
         N, D = U.shape
         assert D == self.num_control
-        
+
         C = np.zeros((2*(N-1), D))
         C[:N-1] = self.Delta - ( U[1:]  - U[:-1] )
         C[N-1:] = self.Delta - ( U[:-1] - U[1:] )
+        L = self.num_constraints(N)
+        C = C.reshape(L)
         if grad:
-            dCdU = np.zeros(( 2*(N-1)*D, N*D ))
+            dCdU = np.zeros(( L, N*D ))
             I1 = tuple( range((N-1)*D) )
             I2 = tuple( range((N-1)*D) )
             I3 = tuple( range((N-1)*D, 2*(N-1)*D) )
             I4 = tuple( range(D,N*D) )
             dCdU[( I1+I3, I2+I4 )] += 1.
             dCdU[( I2+I3, I4+I2 )] -= 1.
-        return C if not grad else (C, dCdU.reshape( C.shape + U.shape ) )
+            dCdU = dCdU.reshape((L, N, D))
+        return C if not grad else (C, dCdU)
