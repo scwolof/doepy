@@ -40,7 +40,7 @@ class LinearModel (Model):
 			x_{k+1} = F * x_k + B * u_k + w_k,   w_k ~ N(0, Q)
 				y_k = H * x_k + v_k,             v_k ~ N(0, R)
 		with 
-			u_k ~ N(u_k, Su)
+			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
 		"""
 		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
 		super().__init__(f, H, Q, R, x0, B.shape[1], P0=P0, Su=Su)

@@ -44,7 +44,7 @@ class GPModel (Model):
 			x_{k+1} = g( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
 				y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
 		with 
-			u_k ~ N(u_k, Su)
+			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
 		
 		if delta_transition:
 			g( x_k, u_k ) = x_k  +  f( x_k, u_k )
