@@ -28,16 +28,19 @@ from numpy.random import multivariate_normal as mvn
 from ..utils import is_symmetric_matrix, is_pos_def
 
 class Model:
-	def __init__ (self, f, H, Q, R, num_inputs):
+	def __init__ (self, f, H, Q, R, num_inputs, Su=None):
 		"""
-		f : transition function x_{k+1} = f(x_k, u_k)
-		H : observation matrix
-		Q : process noise covariance matrix
-		R : measurement noise covariance
+		f  : transition function x_{k+1} = f(x_k, u_k)
+		H  : observation matrix
+		Q  : process noise covariance matrix
+		R  : measurement noise covariance
+		Su : control input covariance
 
 		Model:
 			x_{k+1} = f( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
 			    y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
+		with 
+			u_k ~ N(u_k, Su)
 		"""
 		self.f  = f
 		self.H  = H
@@ -46,6 +49,7 @@ class Model:
 
 		self.num_inputs = num_inputs
 		assert isinstance(self.num_inputs, int) and self.num_inputs > 0
+		self.Su = Su
 
 		self.num_states = self.Q.shape[0]
 		assert self.num_states == self.H.shape[1]
@@ -63,9 +67,6 @@ class Model:
 	def f (self, f):
 		assert callable(f)
 		self._f = f
-	@f.deleter
-	def f (self):
-		del self._f	
 
 	"""
 	Measurement matrix
@@ -78,9 +79,6 @@ class Model:
 		assert isinstance(H, np.ndarray)
 		assert H.ndim == 2
 		self._H = H.copy()
-	@H.deleter
-	def H (self):
-		del self._H
 
 	"""
 	Process noise covariance matrix
@@ -92,9 +90,6 @@ class Model:
 	def Q (self, Q):
 		assert is_symmetric_matrix(Q)
 		self._Q = Q.copy()
-	@Q.deleter
-	def Q (self):
-		del self._Q
 
 	"""
 	Measurement noise covariance matrix
@@ -106,9 +101,22 @@ class Model:
 	def R (self, R):
 		assert is_symmetric_matrix(R)
 		self._R = R.copy()
-	@R.deleter
-	def R (self):
-		del self._R
+
+	"""
+	Control input covariance
+	"""
+	@property
+	def Su (self):
+		return self._Su
+	@Su.setter
+	def Su (self, Su):
+		if Su is None:
+			self._Su = np.zeros(( self.num_inputs, self.num_inputs ))
+		else:
+			assert is_symmetric_matrix(Su)
+			assert Su.shape == (self.num_inputs, self.num_inputs)
+			self._Su = Su.copy()
+
 
 	"""
 	Function calls
@@ -161,10 +169,11 @@ class Model:
 		return X, Y
 
 	def _sample (self, x, u):
-		xk1, yk = self.predict(x, u)
+		us = mvn(u, self.Su)
+		xy = self.predict(x, us)
 		wk = mvn( np.zeros(self.num_states), self.Q )
 		vk = mvn( np.zeros(self.num_meas), self.R )
-		return xk1+wk, yk+vk
+		return xy[0] + wk, xy[1] + vk
 
 	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False):
 		"""
@@ -197,10 +206,11 @@ class Model:
 		dSdu = np.zeros(( n, self.num_states, self.num_states, self.num_inputs ))
 		for k in range(n):
 			X[k], S[k], dXdx[k], dXds[k], dXdu[k], dSdx[k], dSds[k], dSdu[k] \
-			                = self._predict_x_dist(X[k], S[k], U[k], grad=grad)
+			                = self._predict_x_dist(X[k], S[k], U[k], grad=True)
 		return X, S, dXdx, dXds, dXdu, dSdx, dSds, dSdu
 
 	def _predict_x_dist (self, xk, Pk, u, cross_cov=False, grad=False):
+		# Implemented in children classes (e.g. LinearModel)
 		raise NotImplementedError
 
 	def predict_y_dist (self, m, S, grad=False):
@@ -229,7 +239,7 @@ class Model:
 		dPds = np.zeros( [n] + [self.num_meas]*2 + [self.num_states]*2 )
 		for k in range(n):
 			Y[k], P[k], dYdm[k], dYds[k], dPdm[k], dPds[k] \
-			                = self._predict_y_dist(m[k], S[k], grad=grad)
+			                = self._predict_y_dist(m[k], S[k], grad=True)
 		return Y, P, dYdm, dYds, dPdm, dPds
 
 	def _predict_y_dist (self, m, S, grad=False):
@@ -270,10 +280,10 @@ class Model:
 		return X, P
 
 	def _filter (self, yk, m, S):
-		SH   = np.matmul(S, self.H.T)
-		K    = np.matmul(SH, np.linalg.inv(np.matmul(self.H, SH) + self.R))
-		mk   = m + np.matmul(K, yk - np.matmul(self.H, m))
-		Pk   = S - np.matmul(K, SH.T)
+		SH = np.matmul(S, self.H.T)
+		K  = np.matmul(SH, np.linalg.inv(np.matmul(self.H, SH) + self.R))
+		mk = m + np.matmul(K, yk - np.matmul(self.H, m))
+		Pk = S - np.matmul(K, SH.T)
 		return mk, Pk
 
 	def predict_filter (self, Y, x0, P0, U):

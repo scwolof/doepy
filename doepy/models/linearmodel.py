@@ -27,20 +27,23 @@ import numpy as np
 from .model import Model
 
 class LinearModel (Model):
-	def __init__ (self, F, B, H, Q, R):
+	def __init__ (self, F, B, H, Q, R, Su=None):
 		"""
-		F : state transition matrix
-		B : control matrix
-		H : observation matrix
-		Q : process noise covariance matrix
-		R : measurement noise covariance
+		F  : state transition matrix
+		B  : control matrix
+		H  : observation matrix
+		Q  : process noise covariance matrix
+		R  : measurement noise covariance
+		Su : control input covariance
 
 		Model:
-			x_{k+1} = F * x_k  +  B * u_k  +  w_k,   w_k ~ N(0, Q)
-				y_k = H * x_k  +  v_k,               v_k ~ N(0, R)
+			x_{k+1} = F * x_k + B * u_k + w_k,   w_k ~ N(0, Q)
+				y_k = H * x_k + v_k,             v_k ~ N(0, R)
+		with 
+			u_k ~ N(u_k, Su)
 		"""
 		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
-		super(LinearModel, self).__init__(f, H, Q, R, B.shape[1])
+		super().__init__(f, H, Q, R, B.shape[1], Su=Su)
 
 		self.F  = F
 		self.B  = B
@@ -81,7 +84,8 @@ class LinearModel (Model):
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		M = np.matmul(self.F, xk) + np.matmul(self.B, u)
 		V = np.matmul(Sk, self.F.T)
-		S = np.matmul(self.F, V) + self.Q
+		S = np.matmul(self.Su, self.B.T)
+		S = np.matmul(self.F, V) + np.matmul(self.B, S) + self.Q
 		if not grad:
 			return (M, S, V) if cross_cov else (M, S)
 		# Compute gradients
@@ -96,10 +100,12 @@ class LinearModel (Model):
 		dSdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
+
 		# Compute cross-covariance
 		#dVdx = np.zeros([self.num_states]*3)
 		#dVds = np.zeros([self.num_states]*4)
 		#for d1 in range( self.num_states ):
 		#	dVds[d1,:,d1] = self.F.copy()
 		#dVdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
-		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu #, dVdx, dVds, dVdu
+
+		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu

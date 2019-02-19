@@ -31,16 +31,20 @@ from .model import Model
 from ..transform import BoxTransform, MeanTransform
 
 class GPModel (Model):
-	def __init__ (self, f, H, Q, R, num_inputs, delta_transition=False, transform=True):
+	def __init__ (self, f, H, Q, R, num_inputs, Su=None, \
+				delta_transition=False, transform=True):
 		"""
-		f : transition function x_{k+1} = f(x_k, u_k)
-		H : observation matrix
-		Q : process noise covariance matrix
-		R : measurement noise covariance
+		f  : transition function x_{k+1} = f(x_k, u_k)
+		H  : observation matrix
+		Q  : process noise covariance matrix
+		R  : measurement noise covariance
+		Su : control input covariance
 
 		Model:
 			x_{k+1} = g( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
 				y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
+		with 
+			u_k ~ N(u_k, Su)
 		
 		if delta_transition:
 			g( x_k, u_k ) = x_k  +  f( x_k, u_k )
@@ -52,7 +56,7 @@ class GPModel (Model):
 
 		We put a GP prior on f
 		"""
-		super(GPModel, self).__init__(f, H, Q, R, num_inputs)
+		super().__init__(f, H, Q, R, num_inputs, Su=Su)
 
 		self.gps = []
 		self.hyp = []
@@ -120,6 +124,7 @@ class GPModel (Model):
 		dim  = len( tnew )
 		Snew = np.zeros((dim, dim))
 		Snew[:self.num_states, :self.num_states] = Sk
+		Snew[self.num_states:, self.num_states:] = self.Su
 		if self.transform:
 			tnew = self.t_transform(tnew)
 			Snew = self.t_transform.cov(Snew)
@@ -181,7 +186,7 @@ class GPModel (Model):
 			return (M, S, V) if cross_cov else (M, S)
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
-		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu #, dVdx, dVds, dVdu
+		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu
 
 
 	def _moment_match (self, mu, s2, grad=False):
