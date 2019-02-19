@@ -1,73 +1,119 @@
 
 import numpy as np 
 
-from .design_criteria import HR
-
 class ProblemInstance:
-	def __init__ (self, models, num_steps, u_bounds, u_delta_lim, y_bounds, 
-			y_constraint_prob=0.99, div_criterion=None):
-		self.models     = models
-		self.num_models = len(models)
-		self.num_steps  = num_steps
-		self.divergence = div_criterion or HR()
+	def __init__ (self, models, num_steps, div_criterion, u_bounds,
+				  u_constraints=[], y_constraints=[]):
+		self.models      = models
+		self.num_models  = len( models )
+		self.num_meas    = models[0].num_meas
+		self.num_steps   = num_steps
+		self.divergence  = div_criterion
+		self.u_bounds    = u_bounds.copy()
+		self.num_control = u_bounds.shape[0]
 
-		self.Du = len(u_bounds)
-		self.U = np.array([np.mean(u_bounds, axis=1)]*num_steps)
-		self.u_delta  = u_delta_lim
-		self.y_bounds = y_bounds
-		self.y_const_prob = y_constraint_prob
-		assert isinstance(self.y_const_prob, float) and 0<self.y_const_prob<1
+		# Lists of constraints
+		self.u_constraints = u_constraints
+		if not isinstance(self.u_constraints, list):
+			self.u_constraints = [ self.u_constraints ]
+		self.y_constraints = y_constraints
+		if not isinstance(self.y_constraints, list):
+			self.y_constraints = [ self.y_constraints ]
 
-	def objective (self):
-		raise NotImplementedError
+		# Compute the number of constraints
+		self.num_constraints = 0
+		for const in self.u_constraints:
+			self.num_constraints += const.num_constraints( self.num_steps )
+		for const in self.y_constraints:
+			self.num_constraints += self.num_steps * self.num_models \
+									* const.num_constraints()
 
-	def constraints (self):
-		raise NotImplementedError
 
-	def _build_problem (self):
-		# Hard inequality constraints
-		ineq = self._build_u_delta_constraints()
-		# Divergence term
-		D  = 0.
-		# Means and variances of predicted states and observations 
-		mX = [ model.x0.astype(np.float) for model in self.models ]
-		sX = [ model.P0.astype(np.float) for model in self.models ]
-		mY = [ None for model in self.models ]
-		sY = [ None for model in self.models ]
-		# Iterate over the control sequence
-		for n in range( self.num_steps ):
-			# Next control input
-			u = self.U[n]
-			# State prediction
+	def sample_U (self):
+		ul, uu = self.u_bounds[:,0], self.u_bounds[:,1]
+		return ul + (uu - ul) * np.random.rand(num_steps, self.num_control)
+
+
+	def __call__ (self, u_flat):
+		E = self.num_meas
+		N = self.num_steps
+		M = self.num_models
+		D = self.num_control
+
+		# Unflatten
+		U = u_flat.reshape(( N, D ))
+
+		# Objective
+		f    = 0.
+		dfdU = np.zeros( U.shape )
+		# Constraints
+		C    = np.zeros( self.num_constraints )
+		dCdU = np.zeros((self.num_constraints,) + U.shape )
+
+		# Constraint counter
+		i_c = 0
+		# Control constraints
+		for const in self.u_constraints:
+			c, dc = const( U, grad=True )
+			L     = const.num_constraints(self.num_steps)
+			C[ i_c: i_c+L ]    = c
+			dCdU[ i_c: i_c+L ] = dc
+			i_c += L
+
+		# Initial states
+		x, p, dxdU, dpdU = [], [], [], []
+		for model in self.models:
+			x.append( model.x0 )
+			p.append( model.P0 )
+			dxdU.append( np.zeros(( N, model.num_states, D)) )
+			dpdU.append( np.zeros(( N, model.num_states, model.num_states, D)) )
+		Y = np.zeros(( M, E ))
+		S = np.zeros(( M, E, E ))
+		dYdU = np.zeros(( M, E, N, D))
+		dSdU = np.zeros(( M, E, E, N, D))
+
+		# Iterate over control sequence
+		for n, u in enumerate( U ):
+			dYdU.fill(0.)
+			dSdU.fill(0.)
+
+			# Predictive distributions at time n for model i
 			for i, model in enumerate( self.models ):
-				mX[i],sX[i] = model._build_predict_x_dist(mX[i],sX[i], u)[:2]
-				mY[i],sY[i] = model._build_predict_y_dist(mX[i],sX[i])
-				#ineq.append( self._build_state_constraint(mY[i],sY[i]) )
-			D += self.divergence( mY, sY )
-		return -D, ineq
+				x[i], p[i], dxdx, dxdp, dxdu, dpdx, dpdp, dpdu \
+					= model.predict_x_dist(x[i], p[i], u, grad=True)
+				Y[i], S[i], dydx, dydp, dsdx, dsdp \
+					= model.predict_y_dist(x[i], p[i], grad=True)
+				for j in range( n+1 ):
+					dxdU[i][j], dpdU[i][j] \
+						= np.matmul( dxdx, dxdU[i][j] ) \
+								+ np.einsum( 'ijk,jkn->in', dxdp, dpdU[i][j] ),\
+						  np.matmul( dpdx, dxdU[i][j] ) \
+								+ np.einsum( 'imjk,jkn->imn', dpdp, dpdU[i][j] )
+					if j == n:
+						dxdU[i][j] += dxdu
+						dpdU[i][j] += dpdu
+					dYdU[i,:,j]   = np.matmul( dydx, dxdU[i][j] ) \
+								+ np.einsum( 'ijk,jkn->in', dydp, dpdU[i][j] )
+					dSdU[i,:,:,j] = np.matmul( dsdx, dxdU[i][j] ) \
+								+ np.einsum( 'imjk,jkn->imn', dsdp, dpdU[i][j] )
 
-	def _build_u_delta_constraints (self):
-		ineq = []
-		# U delta constraints
-		for n in range( 1, self.num_steps ):
-			for j in range( self.Du ):
-				#d_const1 = self.U[j][n] - self.U[j][n-1] + self.u_delta[j]
-				#d_const2 = self.U[j][n-1] - self.U[j][n] + self.u_delta[j]
-				# | U[n] - U[n-1] | <= u_delta
-				"""
-				d_const1 = self.U[j][n] - self.U[j][n-1] - self.u_delta[j]
-				d_const2 = self.U[j][n-1] - self.U[j][n] - self.u_delta[j]
-				ineq.append(d_const1)
-				ineq.append(d_const2)
-				"""
-				d_const = -self.U[j][n]
-				ineq.append(d_const)
-		return ineq
+				# State constraint for model i at time n
+				for const in self.y_constraints:
+					c, dcdY, dcdS = const(Y[i], S[i], grad=True)
+					L = const.num_constraints()
+					C[ i_c: i_c+L ]    = c
+					dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdY,dYdU[i]) \
+								+ np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
+					i_c += L
 
-	"""
-	def _build_state_constraint (self, mY, mS):
-		dist  = mvn(mY, mS)
-		Phi_b = dist.cdf(self.y_bounds[:,1])
-		Phi_a = dist.cdf(self.y_bounds[:,0])
-		return Phi_b - Phi_a - self.y_const_prob
-	"""
+			# Divergence between predictive distributions at time n
+			ftmp, dDdY, dDdS = self.divergence(Y, S, grad=True)
+			f += ftmp
+			for j in range( n+1 ):
+				dfdU[j] += np.einsum('ij,ijk->k', dDdY, dYdU[:,:,j] ) \
+							+ np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j]) 
+
+		# flatten
+		dfdU = dfdU.reshape(u_flat.shape)
+		dCdU = dCdU.reshape((self.num_constraints,) + u_flat.shape)
+		return f, C, dfdU, dCdU
