@@ -73,7 +73,7 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 			corresponding gradients. (It is assumed that gradients are 
 			computed as part of objective and constraint evaluation.)
 			"""
-			f, c, df, dc = func(x)
+			f, c, df, dc = problem_instance(x)
 
 			f  = float(np.asarray(f))
 			df = np.append(df, 0.0)
@@ -89,7 +89,7 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 			break
 
 	status  = int(mode)
-	sucess  = status == 0
+	success = status == 0
 	message = {-1: "Gradient evaluation required (df & dc)",
 	            0: "Optimization terminated successfully.",
 	            1: "Function evaluation required (f & c)",
@@ -102,4 +102,5 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 	            8: "Positive directional derivative for linesearch",
 	            9: "Iteration limit exceeded"}[ status ]
 
+	x = x.reshape( x0.shape )
 	return {'x':x, 'f':f, 'success':success, 'status':status, 'message':message}
