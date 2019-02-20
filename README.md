@@ -6,12 +6,13 @@
 Currently implements:
 * State uncertainty
 * Some control input uncertainty
+* Delta constraints on control input
+* Mean state constraints
+* Design criteria
+* SLSQP optimisation
 
 Does not implement:
 * Model parameter uncertainty
-* State constraints
-* Delta constraints on control input
-
 
 ## Pronounciation
 We pronounce the package name as '_dopey_'
