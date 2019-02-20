@@ -35,6 +35,10 @@ class ProblemInstance:
 		self.u_bounds    = u_bounds.copy()
 		self.num_control = u_bounds.shape[0]
 
+		# Control input bounds at every step
+		self.bounds = np.array([ self.u_bounds ] * self.num_steps )
+		self.bounds = self.bounds.reshape((self.num_steps*self.num_control, 2))
+
 		# Lists of constraints
 		self.u_constraints = u_constraints
 		if not isinstance(self.u_constraints, list):
@@ -137,9 +141,9 @@ class ProblemInstance:
 
 			# Divergence between predictive distributions at time n
 			ftmp, dDdY, dDdS = self.divergence(Y, S, grad=True)
-			f += ftmp
+			f -= ftmp   ## Minimisation -> negative maximisation
 			for j in range( n+1 ):
-				dfdU[j] += np.einsum('ij,ijk->k', dDdY, dYdU[:,:,j] ) \
+				dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dYdU[:,:,j] ) \
 							+ np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j]) 
 
 		# flatten
