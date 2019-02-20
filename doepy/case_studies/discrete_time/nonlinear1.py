@@ -42,7 +42,7 @@ class Model:
 
 		self.hessian = True
 
-		self.dict_nonlinear = \
+		self.dict = \
 		    {'f':  self,
 		     'H':  self.H,
 		     'Q':  self.Q,
@@ -50,7 +50,6 @@ class Model:
 		     'x0': self.x0,
 		     'P0': self.P0,
 		     'Su': self.Su,
-		     'hessian': self.hessian,
 		     'num_inputs': self.num_inputs}
 
 		self.num_steps = 50
