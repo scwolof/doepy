@@ -52,9 +52,15 @@ class ProblemInstance:
 									* const.num_constraints()
 
 
-	def sample_U (self):
+	def sample_U (self, check_constraints=True):
+		# U : sampled control signal
+		# C : (boolean) checks if U satisfies control constraints
 		ul, uu = self.u_bounds[:,0], self.u_bounds[:,1]
-		return ul + (uu - ul) * np.random.rand(num_steps, self.num_control)
+		U = ul + (uu - ul) * np.random.rand(self.num_steps, self.num_control)
+		if not check_constraints:
+			return U
+		C = [ np.all( const(U) >= 0.) for const in self.u_constraints ]
+		return U, np.all( C )
 
 
 	def __call__ (self, u_flat):
