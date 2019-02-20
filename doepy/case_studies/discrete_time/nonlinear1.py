@@ -62,6 +62,7 @@ class Model:
 class M1 (Model):
 	def __init__ (self):
 		super().__init__(3)
+		self.name = 'M1'
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3 = x
@@ -91,6 +92,7 @@ class M1 (Model):
 class M2 (Model):
 	def __init__ (self):
 		super().__init__(3)
+		self.name = 'M2'
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3 = x
@@ -118,6 +120,7 @@ class M2 (Model):
 class M3 (Model):
 	def __init__ (self):
 		super().__init__(4)
+		self.name = 'M3'
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3, x4 = x
@@ -147,6 +150,7 @@ class M3 (Model):
 class M4 (Model):
 	def __init__ (self):
 		super().__init__(4)
+		self.name = 'M4'
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3, x4 = x
@@ -176,7 +180,7 @@ class M4 (Model):
 		return g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu
 
 
-class DataGen (M1):
+class DataGen (M4):
 	def __init__ (self):
 		super().__init__()
 
