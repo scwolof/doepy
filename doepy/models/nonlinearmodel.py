@@ -65,7 +65,7 @@ class NonLinearModel (Model):
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		if self.hessian:
-			g, dgdx, dgdu, ddgddx, ddgddu = self.f( xk, u, grad=True )
+			g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu = self.f( xk, u, grad=True )
 		else:
 			g, dgdx, dgdu = self.f( xk, u, grad=True )
 		M  = g
@@ -80,16 +80,20 @@ class NonLinearModel (Model):
 		dMdu = dgdu
 		dSdx = np.zeros([self.num_states]*3)
 		if self.hessian:
-			dSdx = np.einsum('ik,nkl->inl',V.T,ddgddx) \
-					+ np.einsum('nkl,li->nik',ddgddx,V)
+			dSdx = np.einsum('ik,nkl->inl', V.T, ddgddx) \
+			     + np.einsum('nkl,li->nik', ddgddx, V) \
+			     + np.einsum('ik,nlk->inl', St.T, ddgdxu) \
+			     + np.einsum('nlk,ki->nil', ddgdxu, St)
 		dSds = np.zeros([self.num_states]*4)
 		for d1 in range( self.num_states ):
 			for d2 in range( self.num_states ):
 				dSds[d1,d2] = dgdx[d1][:,None] * dgdx[d2][None,:]
 		dSdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
 		if self.hessian:
-			dSdu = np.einsum('ik,nkl->inl',St.T,ddgddu) \
-					+ np.einsum('nkl,li->nik',ddgddu,St)
+			dSdu = np.einsum('ik,nkl->inl', St.T, ddgddu) \
+			     + np.einsum('nkl,li->nik', ddgddu, St) \
+			     + np.einsum('ik,nkl->inl', V.T, ddgdxu) \
+			     + np.einsum('nkl,ki->nil', ddgdxu, V)
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
 		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu
