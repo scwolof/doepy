@@ -44,10 +44,10 @@ class Model:
 
 
 class M1 (Model):
-	def __init__ (self, x, u, grad=True):
+	def __init__ (self):
 		super().__init__(3)
 
-	def __call__ (x, u, grad=False):
+	def __call__ (self, x, u, grad=False):
 		x1, x2, x3 = x
 		u1, u2     = u
 		xk1 = u1
@@ -73,10 +73,10 @@ class M1 (Model):
 
 
 class M2 (Model):
-	def __init__ (self, x, u, grad=True):
+	def __init__ (self):
 		super().__init__(3)
 
-	def __call__ (x, u, grad=False):
+	def __call__ (self, x, u, grad=False):
 		x1, x2, x3 = x
 		u1, u2     = u
 		xk1 = u1
@@ -100,10 +100,10 @@ class M2 (Model):
 
 
 class M1 (Model):
-	def __init__ (self, x, u, grad=True):
+	def __init__ (self):
 		super().__init__(4)
 
-	def __call__ (x, u, grad=False):
+	def __call__ (self, x, u, grad=False):
 		x1, x2, x3, x4 = x
 		u1, u2 = u
 		xk1 = u1
@@ -129,10 +129,10 @@ class M1 (Model):
 
 
 class M4 (Model):
-	def __init__ (self, x, u, grad=True):
+	def __init__ (self):
 		super().__init__(4)
 
-	def __call__ (x, u, grad=False):
+	def __call__ (self, x, u, grad=False):
 		x1, x2, x3, x4 = x
 		u1, u2 = u
 		xk1 = u1
