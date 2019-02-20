@@ -27,37 +27,25 @@ import numpy as np
 from .model import Model
 
 class NonLinearModel (Model):
-	def __init__ (self, f, H, Q, R, x0, num_inputs, P0=None, Su=None, \
-					hessian=False):
+	def __init__ (self, f, num_inputs, *args, hessian=False, **kwargs):
 		"""
-		f  : transition function x_{k+1} = f(x_k, u_k)
-		H  : observation matrix
-		Q  : process noise covariance matrix
-		R  : measurement noise covariance
-		Su : control input covariance
-
-		Model:
-			x_{k+1} = f( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
-				y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
-		with 
-			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
-
-		f is differentiable:
+		Transition function f is differentiable:
 			g, dgdx, dgdu = f( x_k, u_k, grad=True )
-			x     [ E ]
-			u     [ D ]
+			x_k   [ E ]
+			u_k   [ D ]
 			g     [ E ]
 			dgdx  [ E x E ]
 			dgdu  [ E x D ]
 
 			if hessian: (STRONGLY RECOMMENDED)
-			g, dgdx, dgdu, ddgddx, ddgddu = f( x_k, u_k, grad=True )
+			g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu = f( x_k, u_k, grad=True )
 			ddgddx  [ E x E x E ]
 			ddgddu  [ E x D x D ]
+			ddgdxu  [ E x E x D ]
 
 			WARNING: STABILITY NOT TESTED WITHOUT HESSIAN INFORMATION
 		"""
-		super().__init__(f, H, Q, R, x0, num_inputs, P0=P0, Su=Su)
+		super().__init__(f, num_inputs, *args, **kwargs)
 		self.hessian = hessian
 
 	"""

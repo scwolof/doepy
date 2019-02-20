@@ -27,23 +27,13 @@ import numpy as np
 from .model import Model
 
 class LinearModel (Model):
-	def __init__ (self, F, B, H, Q, R, x0, P0=None, Su=None):
+	def __init__ (self, F, B, *args, **kwargs):
 		"""
-		F  : state transition matrix
-		B  : control matrix
-		H  : observation matrix
-		Q  : process noise covariance matrix
-		R  : measurement noise covariance
-		Su : control input covariance
-
 		Model:
-			x_{k+1} = F * x_k + B * u_k + w_k,   w_k ~ N(0, Q)
-				y_k = H * x_k + v_k,             v_k ~ N(0, R)
-		with 
-			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
+			f(x_k, u_k) = F * x_k + B * u_k
 		"""
 		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
-		super().__init__(f, H, Q, R, x0, B.shape[1], P0=P0, Su=Su)
+		super().__init__(f, B.shape[1], *args, **kwargs)
 
 		self.F  = F
 		self.B  = B

@@ -28,7 +28,7 @@ from numpy.random import multivariate_normal as mvn
 from ..utils import is_symmetric_matrix, is_pos_def
 
 class Model:
-	def __init__ (self, f, H, Q, R, x0, num_inputs, P0=None, Su=None):
+	def __init__ (self, f, num_inputs, H, Q, R, x0, P0=None, Su=None):
 		"""
 		f  : transition function x_{k+1} = f(x_k, u_k)
 		H  : observation matrix
@@ -43,6 +43,7 @@ class Model:
 			    y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
 		with 
 			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
+			u_k of dimension num_inputs
 		"""
 		self.f  = f
 		self.H  = H

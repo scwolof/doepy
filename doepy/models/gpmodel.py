@@ -31,32 +31,22 @@ from .model import Model
 from ..transform import BoxTransform, MeanTransform
 
 class GPModel (Model):
-	def __init__ (self, f, H, Q, R, x0, num_inputs, P0=None, Su=None, \
-				delta_transition=False, transform=True):
+	def __init__ (self, f, num_inputs, *args, delta_transition=False, \
+		          transform=True, **kwargs):
 		"""
-		f  : transition function x_{k+1} = f(x_k, u_k)
-		H  : observation matrix
-		Q  : process noise covariance matrix
-		R  : measurement noise covariance
-		Su : control input covariance
+		We assume we do not have gradient information for f
 
-		Model:
-			x_{k+1} = g( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
-				y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
-		with 
-			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
-		
 		if delta_transition:
-			g( x_k, u_k ) = x_k  +  f( x_k, u_k )
+			f( x_k, u_k ) = x_k  +  g( x_k, u_k )
 		else
-			g( x_k, u_k ) = f( x_k, u_k )
+			f( x_k, u_k ) = g( x_k, u_k )
+
+		We place a GP prior on the function g
 
 		transform : transform [x,u] -> [0, 1]^dim, and ( x_{k+1} - m) / std
 		## WARNING - transform suffering problems ##
-
-		We put a GP prior on f
 		"""
-		super().__init__(f, H, Q, R, x0, num_inputs, P0=P0, Su=Su)
+		super().__init__(f, num_inputs, *args, **kwargs)
 
 		self.gps = []
 		self.hyp = []
