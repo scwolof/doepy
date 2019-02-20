@@ -35,12 +35,28 @@ class Model:
 
 		self.R  = 2.5e-3 * np.eye( self.num_meas )
 		self.Q  = 1e-4 * np.eye( self.num_states )
-		self.Su = 1e-5 * np.eye( self.num_inpus )
+		self.Su = 1e-5 * np.eye( self.num_inputs )
 
 		self.x0 = np.zeros( self.num_states )
 		self.P0 = 1e-6 * np.eye( self.num_states )
 
 		self.hessian = True
+
+		self.dict_nonlinear = \
+		    {'f':  self,
+		     'H':  self.H,
+		     'Q':  self.Q,
+		     'R':  self.R,
+		     'x0': self.x0,
+		     'P0': self.P0,
+		     'Su': self.Su,
+		     'hessian': self.hessian,
+		     'num_inputs': self.num_inputs}
+
+		self.num_steps = 50
+		self.u_delta   = np.array([0.25] * self.num_inputs)
+		self.u_bounds  = np.array([[-0.5, 0.5]] * self.num_inputs)
+		self.y_bounds  = np.array([[-0.6, 0.6], [0., 1.]])
 
 
 class M1 (Model):
@@ -99,7 +115,7 @@ class M2 (Model):
 		return g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu
 
 
-class M1 (Model):
+class M3 (Model):
 	def __init__ (self):
 		super().__init__(4)
 
