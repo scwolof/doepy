@@ -15,7 +15,7 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 	x = np.asfarray(x0).flatten()
 
 	# m = The total number of constraints
-	m = problem_instance.num_constraints
+	m = int(problem_instance.num_constraints)
 	# la = The number of constraints, or 1 if there are no constraints
 	la = max([1, m])
 	# n = The number of independent variables
@@ -102,4 +102,4 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 	            8: "Positive directional derivative for linesearch",
 	            9: "Iteration limit exceeded"}[ status ]
 
-	return x, success, status, message
+	return {'x':x, 'f':f, 'success':success, 'status':status, 'message':message}
