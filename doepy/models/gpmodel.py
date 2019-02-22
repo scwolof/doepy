@@ -29,7 +29,7 @@ from GPy.kern import RBF
 
 from .model import Model
 from ..transform import BoxTransform, MeanTransform
-from ..approximate_inference import exact_rbf_moment_match
+from ..approximate_inference import rbf_moment_match
 
 class GPModel (Model):
 	def __init__ (self, f, num_inputs, *args, delta_transition=False, \
@@ -125,7 +125,7 @@ class GPModel (Model):
 			Snew = self.t_transform.cov(Snew)
 
 		# Moment matching
-		res = exact_rbf_moment_match(self.gps, tnew, Snew, grad=grad)
+		res = rbf_moment_match(self.gps, tnew, Snew, grad=grad)
 		if grad:
 			M, S, V, dMdt, dMds, dSdt, dSds, dVdt, dVds = res
 		else:
