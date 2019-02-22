@@ -24,28 +24,33 @@ SOFTWARE.
 
 import numpy as np
 
-def exact_rbf_moment_match (gps, mu, s2, grad=False):
+def exact_rbf_moment_match (gps, mu, s2, grad=False, independent=False):
 	"""
 	Approximate inference with uncertain input x ~ N(mu, s2)
 	for function with GP prior given by gps (assumed to have RBF kernels).
 
+	Can handle GPs with RBF kernels with different active dimensions.
+
 	Inputs:
 	    gps   [ E ]      list, GPs (one for each independent target dimension)
 	    mu    [ D ]      numpy array, input mean 
-	    s2    [ D x D ]  numpy array, input covariance 
-	    grad  (optional) return gradients of outputs wrt inputs
+	    s2    [ D x D ]  numpy array, input covariance
+	(optional)
+	    grad             return gradients of outputs wrt inputs
+	    independent      target dimensions independent
+	                     do not compute cross-covariance terms
 
 	Outputs:
 	    M     [ E ]      mean E_{x,f}[ f(x) ]
 	    S     [ E x E ]  covariance V_{x,f}[ f(x) ]
 	    V     [ D x E ]  input-output covariance cov_{x,f}[ x, f(x) ]
-		if grad:
-		dMdm  [ E x D ]
-		dMds  [ E x D x D ]
-		dSdm  [ E x E x D ]
-		dSds  [ E x E x D x D ]
-		dVdm  [ D x E x D ]
-		dVds  [ D x E x D x D ]
+	    if grad:
+	    dMdm  [ E x D ]
+	    dMds  [ E x D x D ]
+	    dSdm  [ E x E x D ]
+	    dSds  [ E x E x D x D ]
+	    dVdm  [ D x E x D ]
+	    dVds  [ D x E x D x D ]
 
 	Code largely based on PILCO (Copyright (C) 2008-2013 by Marc Deisenroth, 
 	Andrew McHutchon, Joe Hall, and Carl Edward Rasmussen) written in MATLAB.
@@ -53,14 +58,12 @@ def exact_rbf_moment_match (gps, mu, s2, grad=False):
 	assert isinstance(gps, list) and not gps == []
 
 	# Memory allocation
-	D    = len( mu )        # Number of input dimensions
-	E    = len( gps )       # Number of target dimensions
-	N    = gps[0].posterior.woodbury_vector.shape[0]
-
-	logk = np.zeros( (N, E) )
-	M    = np.zeros( (E) )
-	S    = np.zeros( (E, E) )
-	V    = np.zeros( (D, E) )
+	D = len( mu )        # Number of input dimensions
+	E = len( gps )       # Number of target dimensions
+	
+	M = np.zeros( (E) )
+	S = np.zeros( (E, E) )
+	V = np.zeros( (D, E) )
 
 	if grad:
 		dMdm = np.zeros( (E, D) )       # output mean by input mean
@@ -70,15 +73,28 @@ def exact_rbf_moment_match (gps, mu, s2, grad=False):
 		dVdm = np.zeros( (D, E, D) )    # output covariance by input mean
 		dVds = np.zeros( (D, E, D, D) ) # output covariance by input covar
 
-	# Full or sparse GP ?
-	inp = inp = gps[0].X if gps[0].X.shape[0] == N else gps[0].Z
-	# Centralise training inputs
-	inp = inp - mu[None,:]
-
+	lengthscales    = 100 * np.ones((E, D))
+	all_dims_active = True
 	for e in range( E ):
+		I = gps[e].kern.active_dims
+		if not len( I ) == D:
+			all_dims_active = False
+		lengthscales[e,I] = np.asarray(gps[e].kern.lengthscale)
+
+	logk = []
+	for e in range( E ):
+		if e == 0 or not all_dims_active:
+			# Full or sparse GP ?
+			I   = gps[e].kern.active_dims
+			N   = gps[e].posterior.woodbury_vector.shape[0]
+			inp = np.zeros(( N, D ))
+			X   = gps[e].X if gps[e].X.shape[0] == N else gps[e].Z
+			# Centralise training inputs
+			inp[:,I] = X[:,I] - mu[None,I]
+
 		# First, some useful intermediate terms
 		beta = gps[e].posterior.woodbury_vector.flatten()
-		leng = np.array(gps[e].kern.lengthscale)
+		leng = lengthscales[e]
 		rho2 = np.array(gps[e].kern.variance)[0]
 		
 		iL    = np.diag(1. / leng**2 )
@@ -111,19 +127,40 @@ def exact_rbf_moment_match (gps, mu, s2, grad=False):
 								+ bq[:,None,None] * dis2LXs2ds, axis=0 )
 				dVds[:,e,d1] += c * dsumbqSSds
 			
-		logk[:,e] = np.log(rho2) - 0.5 * np.sum( (inp/leng)**2, axis=1 )
+		logk.append( np.log(rho2) - 0.5 * np.sum( (inp/leng)**2, axis=1 ) )
 		
 	# 2) predictive covariance matrix
 	# 2a) non-central moments
 	for i in range(E):
-		lengi = 1. / np.array(gps[i].kern.lengthscale)**2
+		if not all_dims_active:
+			# Full or sparse GP ?
+			I   = gps[i].kern.active_dims
+			N   = gps[i].posterior.woodbury_vector.shape[0]
+			inp = np.zeros(( N, D ))
+			X   = gps[i].X if gps[i].X.shape[0] == N else gps[i].Z
+			# Centralise training inputs
+			inp[:,I] = X[:,I] - mu[None,I]
+
+		lengi = 1. / lengthscales[i]**2
 		ii    = inp * lengi
 		betai = gps[i].posterior.woodbury_vector
 
-		#for j in range(i+1):
 		for j in range(i,E):
-			lengj = 1. / np.array(gps[j].kern.lengthscale)**2
-			ij    = inp * lengj
+			if j == i:
+				lengj = lengi
+				ij    = ii
+			elif not all_dims_active:
+				# Full or sparse GP ?
+				I   = gps[j].kern.active_dims
+				N   = gps[j].posterior.woodbury_vector.shape[0]
+				inp = np.zeros(( N, D ))
+				X   = gps[j].X if gps[j].X.shape[0] == N else gps[j].Z
+				# Centralise training inputs
+				inp[:,I] = X[:,I] - mu[None,I]
+
+				lengj = 1. / lengthscales[j]**2
+				ij    = inp * lengj
+
 			betaj = gps[j].posterior.woodbury_vector
 			
 			R     = np.matmul(s2, np.diag(lengi + lengj)) + np.eye(D)
@@ -133,7 +170,7 @@ def exact_rbf_moment_match (gps, mu, s2, grad=False):
 			zi,zj = np.matmul(ii,iRs2), np.matmul(ij,iRs2)
 			i1,j2 = np.sum(zi*ii,1), np.sum(zj*ij,1)
 			zRSz  = (i1[:,None] + j2[None,:]) + 2*np.matmul(zi,ij.T)
-			Q     = np.exp( (logk[:,[i]] + logk[:,j]) + 0.5*zRSz )
+			Q     = np.exp( (logk[i][:,None] + logk[j]) + 0.5*zRSz )
 
 			A = betai * betaj.T
 			if i == j:
@@ -160,6 +197,9 @@ def exact_rbf_moment_match (gps, mu, s2, grad=False):
 				T  = 0.5 * (isdR * T - S[i,j] * iR*(lengi + lengj)[:,None])
 				T -= M[i]*dMds[j] + M[j]*dMds[i] 
 				dSds[i,j], dSds[j,i] = T.copy(), T.copy()
+
+			if independent:
+				break
 				
 		S[i,i] += np.array(gps[i].kern.variance)[0]
 	# 2b) centralise moments
