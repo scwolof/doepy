@@ -24,7 +24,7 @@ SOFTWARE.
 
 import numpy as np
 
-def exact_rbf_moment_match (gps, mu, s2, grad=False, independent=False):
+def rbf_moment_match (gps, mu, s2, grad=False, independent=False):
 	"""
 	Approximate inference with uncertain input x ~ N(mu, s2)
 	for function with GP prior given by gps (assumed to have RBF kernels).

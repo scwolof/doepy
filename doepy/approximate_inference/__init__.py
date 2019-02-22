@@ -1,2 +1,2 @@
 
-from .exact_rbf_moment_match import exact_rbf_moment_match
+from .rbf_moment_match import rbf_moment_match
