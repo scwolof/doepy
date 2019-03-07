@@ -26,6 +26,10 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 
 def multistart_fmin_l_bfgs_b (f, X_init, bounds, **kwargs):
+    """
+    Run fmin_l_bfgs_b initialised at points X_init.
+    Return best result.
+    """
     xbest = np.ones(X_init.shape[1]) * np.nan
     ybest = np.inf
     if not isinstance(bounds, list):
@@ -37,3 +41,12 @@ def multistart_fmin_l_bfgs_b (f, X_init, bounds, **kwargs):
             ybest = fopt
             xbest = xopt
     return xbest, ybest
+
+def multistart_points (f, bounds, N_test=1000, N_return=10, args=()):
+    """
+    Generate points to initialise optimisation from.
+    Samples N_test points and returns N_return most promising candidates.
+    """
+    X = np.vstack([ b[0] + (b[1]-b[0])*np.random.rand(N_test) for b in bounds ]).T
+    I = np.argsort( f(X, *args) )[:N_return]
+    return X[I]
