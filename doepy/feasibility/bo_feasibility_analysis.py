@@ -27,7 +27,6 @@ import numpy as np
 from GPy.models import GPRegression
 from GPy.kern import Matern52
 
-from . import expected_improvement
 from ..optimize import multistart_points, multistart_fmin_l_bfgs_b
 
 def train_feasibility_gpmodel (X, Y, hyp=None, retrain_hyp=True, \
@@ -73,10 +72,13 @@ def bayesian_optimisation (f, acq_func, feas_model, bounds, max_iter=25,\
 		y = [ y ] if isinstance(y, float) else y
 		Y = np.concatenate(( Y, y ))
 		X = np.vstack(( X, xbest ))
-
+		
 		# Update bounds
 		if not update_bounds_rule is None:
-			bounds, X, Y = update_bounds_rule( bounds, X, Y, i )
+			feas_model = train_feasibility_gpmodel( X, Y, hyp=feas_model[:], \
+			                                        retrain_hyp=False )
+			dic = {'X':X, 'Y':Y, 'model':feas_model, 'i':i}
+			bounds, X, Y = update_bounds_rule( bounds, **dic )
 
 		# Update model (with hyperparameter training)
 		if retrain_hyp_test is not None:
