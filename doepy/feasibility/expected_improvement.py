@@ -35,7 +35,7 @@ def _dEI (m, s2, dm, ds2):
     E  = _EI(m, s2)
     return ( c1[:,None]*ds2 - c2[:,None]*dm ) * E[:,None]
 
-def EI (x, model, grad=False):
+def expected_improvement (x, model, grad=False):
     if x.ndim == 1:
         x = x[None,:]
     m,s2 = model.predict_noiseless( x )
@@ -45,8 +45,3 @@ def EI (x, model, grad=False):
     dm,ds2 = model.predictive_gradients( x )
     dm,ds2 = dm.reshape((len(m),-1)), ds2.reshape((len(m),-1))
     return _EI(m, s2), _dEI(m, s2, dm, ds2)
-
-def negEI (x, model):
-    # fmin_l_bfgs_b objective function
-    e, de = EI(x, model, grad=True)
-    return -e[0], -de[0]
