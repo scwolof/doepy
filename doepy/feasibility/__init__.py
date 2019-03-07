@@ -1,2 +1,4 @@
 
-from .expected_improvement import EI, negEI
+from .bound_updates import BoundUpdate, EmpiricalBoxBoundUpdate
+from .expected_improvement import expected_improvement
+from .bo_feasibility_analysis import train_feasibility_gpmodel, bayesian_optimisation
