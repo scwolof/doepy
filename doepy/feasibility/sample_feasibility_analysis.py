@@ -34,19 +34,26 @@ def _generate_data (f, bounds, num_sample):
 	Y = np.array([ f(x) for x in X ])
 	return X, Y
 
-def sample_optimisation (f, bounds, max_iter=25, num_sample=51,
-						 update_bounds_rule=None):
+def sample_optimisation (f, bounds, min_iter=1, max_iter=10, num_sample=51,
+						 update_bounds_rule=None, converge_rtol=1e-5,
+						 converge_atol=1e-3):
 	"""
-	We assume we want to _maximise_ the acquisition function 
+	Find bounds and feasible region through exhaustive sampling
 	"""
 	X, Y  = _generate_data( f, bounds, num_sample )
 	model = FeasibilityModel( X, Y )
 
 	if not update_bounds_rule is None:
 		for i in range( max_iter ):
-			dic  = {'X':X, 'Y':Y, 'model':model, 'i':i}
+			dic   = {'X':X, 'Y':Y, 'model':model, 'i':i}
+			old_bounds   = bounds.copy()
 			bounds, X, Y = update_bounds_rule(bounds, **dic)
 			X, Y  = _generate_data( f, bounds, num_sample )
 			model = FeasibilityModel( X, Y )
+
+			# Convergence test
+			if i+1 >= min_iter:
+				if np.allclose(bounds, old_bounds, converge_rtol, converge_atol):
+					break
 
 	return model, bounds

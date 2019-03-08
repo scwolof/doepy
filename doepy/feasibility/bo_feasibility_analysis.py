@@ -28,14 +28,17 @@ from .models import GPFeasibilityModel
 from ..optimize import multistart_points, multistart_fmin_l_bfgs_b
 
 
-def bayesian_optimisation (f, acq_func, X, Y, bounds, max_iter=25,\
+def bayesian_optimisation (f, acq_func, X, Y, bounds, min_iter=20, max_iter=50,
                            retrain_hyp_test=None, update_bounds_rule=None,
-                           multistart_N_test=500, multistart_N_run=10):
+                           multistart_N_test=500, multistart_N_run=10,
+                           converge_rtol=1e-5, converge_atol=1e-3):
 	"""
-	We assume we want to _maximise_ the acquisition function 
+	We want to _maximise_ the acquisition function 
 	"""
-	model = GPFeasibilityModel( X, Y.reshape((X.shape[0],1)) )
+	model    = GPFeasibilityModel( X, Y.reshape((X.shape[0],1)) )
+	max_iter = np.max(( min_iter, max_iter ))
 	retrain_hyp = True
+	convergence = False
 
 	for i in range( max_iter ):
 		# Initial points
@@ -55,12 +58,22 @@ def bayesian_optimisation (f, acq_func, X, Y, bounds, max_iter=25,\
 		if not update_bounds_rule is None:
 			model = GPFeasibilityModel( X, Y.reshape((X.shape[0],1)), model[:] )
 			dic   = {'X':X, 'Y':Y, 'model':model, 'i':i}
+			old_bounds   = bounds.copy()
 			bounds, X, Y = update_bounds_rule( bounds, **dic )
+
+			# Convergence test
+			if i+1 >= min_iter:
+				if np.allclose(bounds, old_bounds, converge_rtol, converge_atol):
+					convergence = True
+
 		model = GPFeasibilityModel( X, Y.reshape((X.shape[0],1)), model[:] )
 
 		# Update model (with hyperparameter training)
 		if retrain_hyp_test is not None:
 			if retrain_hyp_test( i ) or i == max_iter-1:
 				model.optimize()
+
+		if convergence:
+			break
 
 	return model, bounds
