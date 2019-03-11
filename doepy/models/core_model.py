@@ -34,7 +34,7 @@ class CoreModel:
 			x_{k+1} = f( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
 			    y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
 		with 
-			x_0 ~ N(x0, S_x0), u_k ~ N(u_k, Su)
+			x_0 ~ N(x0, S_x0), u_k ~ N(u_k, S_u)
 			u_k of dimension num_inputs
 		"""
 		self.f = candidate_model.f
@@ -44,7 +44,7 @@ class CoreModel:
 
 		self.num_inputs = candidate_model.num_inputs
 		assert isinstance(self.num_inputs, int) and self.num_inputs > 0
-		self.Su = candidate_model.Su
+		self.S_u = candidate_model.S_u
 
 		self.num_states = self.Q.shape[0]
 		assert self.num_states == self.H.shape[1]
@@ -52,7 +52,7 @@ class CoreModel:
 		self.num_meas = self.H.shape[0]
 		assert self.num_meas == self.R.shape[0]
 
-		self.x0 = candidate_model.x0
+		self.x0   = candidate_model.x0
 		self.S_x0 = candidate_model.S_x0
 
 	"""
@@ -104,15 +104,15 @@ class CoreModel:
 	Control input covariance
 	"""
 	@property
-	def Su (self):
-		return self._Su
-	@Su.setter
-	def Su (self, Su):
-		if Su is None:
-			Su = np.zeros(( self.num_inputs, self.num_inputs ))
-		assert is_symmetric_matrix(Su)
-		assert Su.shape == (self.num_inputs, self.num_inputs)
-		self._Su = Su.copy()
+	def S_u (self):
+		return self._S_u
+	@S_u.setter
+	def S_u (self, S_u):
+		if S_u is None:
+			S_u = np.zeros(( self.num_inputs, self.num_inputs ))
+		assert is_symmetric_matrix(S_u)
+		assert S_u.shape == (self.num_inputs, self.num_inputs)
+		self._S_u = S_u.copy()
 
 	"""
 	Initial state mean
@@ -206,7 +206,7 @@ class CoreModel:
 		return X, Y
 
 	def _sample (self, x, u):
-		us = mvn(u, self.Su)
+		us = mvn(u, self.S_u)
 		xy = self.predict(x, us)
 		wk = mvn( np.zeros(self.num_states), self.Q )
 		vk = mvn( np.zeros(self.num_meas), self.R )
@@ -214,7 +214,7 @@ class CoreModel:
 
 	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False):
 		"""
-		Input state posterior mean xk and variance Pk, and controls U 
+		Input state posterior mean xk and variance Sk, and controls U 
 			p( x_k | y_{1 : k} ) = N( xk, Sk )
 		Outputs mean and variance of state prediction
 			p( x_{k+1} | y_{1 : k} ) = int[ f(x, u) * N(x | xk, Sk) ] dx
@@ -246,82 +246,82 @@ class CoreModel:
 			                = self._predict_x_dist(X[k], S[k], U[k], grad=True)
 		return X, S, dXdx, dXds, dXdu, dSdx, dSds, dSdu
 
-	def _predict_x_dist (self, xk, Pk, u, cross_cov=False, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		# Implemented in children classes (e.g. LinearModel)
 		raise NotImplementedError
 
-	def predict_y_dist (self, m, S, grad=False):
+	def predict_y_dist (self, x, s, grad=False):
 		"""
-		Input state mean m and variance S
-			p( x_k | y_{1 : T} ) = N( m, S )
-		Outputs mean and variance of observation
-			p( y_k | y_{1 : T} ) = N( mu, s2 )
+		Input: latent state mean x and covariance s
+			p( x_k | y_{1 : T} ) = N( x, s )
+		Output: observed state mean and variance of observation
+			p( y_k | y_{1 : T} ) = N( Y, S )
 
-		If m.ndim == 1, one-step prediction
-		If m.ndim == 2, multi-step prediction
+		If x.ndim == 1, one-step prediction
+		If x.ndim == 2, multi-step prediction
 		"""
-		if m.ndim == 1:
-			return self._predict_y_dist(m, S, grad=grad)
+		if x.ndim == 1:
+			return self._predict_y_dist(x, s, grad=grad)
 
-		n = len(m)
+		n = len(x)
 		Y = np.zeros(( n, self.num_meas ))
-		P = np.zeros(( n, self.num_meas, self.num_meas ))
+		S = np.zeros(( n, self.num_meas, self.num_meas ))
 		if not grad:
 			for k in range(n):
-				Y[k], P[k] = self._predict_y_dist(m[k], S[k], grad=grad)
-			return Y, P
-		dYdm = np.zeros(( n, self.num_meas, self.num_states ))
+				Y[k], S[k] = self._predict_y_dist(x[k], s[k], grad=grad)
+			return Y, S
+		dYdx = np.zeros(( n, self.num_meas, self.num_states ))
 		dYds = np.zeros(( n, self.num_meas, self.num_states, self.num_states ))
-		dPdm = np.zeros(( n, self.num_meas, self.num_meas, self.num_states ))
-		dPds = np.zeros( [n] + [self.num_meas]*2 + [self.num_states]*2 )
+		dSdx = np.zeros(( n, self.num_meas, self.num_meas, self.num_states ))
+		dSds = np.zeros( [n] + [self.num_meas]*2 + [self.num_states]*2 )
 		for k in range(n):
-			Y[k], P[k], dYdm[k], dYds[k], dPdm[k], dPds[k] \
-			                = self._predict_y_dist(m[k], S[k], grad=True)
-		return Y, P, dYdm, dYds, dPdm, dPds
+			Y[k], S[k], dYdx[k], dYds[k], dSdx[k], dSds[k] \
+			                = self._predict_y_dist(x[k], s[k], grad=True)
+		return Y, S, dYdx, dYds, dSdx, dSds
 
-	def _predict_y_dist (self, m, S, grad=False):
-		mu = np.matmul(self.H, m)
-		s2 = np.matmul(self.H, np.matmul(S, self.H.T) ) + self.R
+	def _predict_y_dist (self, x, s, grad=False):
+		Y = np.matmul(self.H, x)
+		S = np.matmul(self.H, np.matmul(s, self.H.T) ) + self.R
 		if grad:
-			dmudm  = self.H
-			dmudS  = np.zeros( [self.num_meas] + [self.num_states]*2 )
-			ds2dmu = np.zeros( [self.num_meas]*2 + [self.num_states] )
-			ds2dS  = np.zeros( [self.num_meas]*2 + [self.num_states]*2 )
+			dYdm = self.H
+			dYds = np.zeros( [self.num_meas] + [self.num_states]*2 )
+			dSdx = np.zeros( [self.num_meas]*2 + [self.num_states] )
+			dSds = np.zeros( [self.num_meas]*2 + [self.num_states]*2 )
 			for e1 in range(  self.num_meas ):
 				for e2 in range(  self.num_meas ):
-					ds2dS[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
-			return mu, s2, dmudm, dmudS, ds2dmu, ds2dS
-		return mu, s2
+					dSds[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
+			return Y, S, dYdm, dYds, dSdx, dSds
+		return Y, S
 
-	def filter (self, yk, m, S):
+	def filter (self, yk, x, s):
 		"""
-		Input observation yk, prediction mean m and variance S 
-			p( x_k | y_{1 : k-1} ) = N( m, S )
-		Outputs state posterior mean mk and variance Pk 
-			p( x_k | y_{1 : k} ) = N( mk, Pk )
+		Input observation yk, prediction mean m and variance s 
+			p( x_k | y_{1 : k-1} ) = N( x, s )
+		Outputs state posterior mean xk and variance sk 
+			p( x_k | y_{1 : k} ) = N( xk, sk )
 
 		yk : [ (n), E ]
-		m  : [ (n), D ]
-		S  : [ (n), D, D ]
+		x  : [ (n), D ]
+		s  : [ (n), D, D ]
 		"""
-		assert yk.ndim == m.ndim
+		assert yk.ndim == x.ndim
 
 		if yk.ndim == 1:
-			return self._filter(Y, m, S)
+			return self._filter(yk, x, s)
 
 		n = len(yk)
 		X = np.zeros(( n, self.num_states ))
-		P = np.zeros(( n, self.num_states, self.num_states ))
+		S = np.zeros(( n, self.num_states, self.num_states ))
 		for k in range(n):
-			X[k], P[k] = self._filter(yk[k], m[k], S[k])
-		return X, P
+			X[k], S[k] = self._filter(yk[k], x[k], s[k])
+		return X, S
 
-	def _filter (self, yk, m, S):
-		SH = np.matmul(S, self.H.T)
-		K  = np.matmul(SH, np.linalg.inv(np.matmul(self.H, SH) + self.R))
-		mk = m + np.matmul(K, yk - np.matmul(self.H, m))
-		Pk = S - np.matmul(K, SH.T)
-		return mk, Pk
+	def _filter (self, yk, x, s):
+		sH = np.matmul(s, self.H.T)
+		K  = np.matmul(sH, np.linalg.inv(np.matmul(self.H, sH) + self.R))
+		xk = x + np.matmul(K, yk - np.matmul(self.H, x))
+		sk = s - np.matmul(K, sH.T)
+		return xk, sk
 
 	def predict_filter (self, Y, x0, S_x0, U):
 		"""
@@ -334,45 +334,45 @@ class CoreModel:
 		U    : [ n, D_U ]     ( u_1, ..., u_{n-1} )
 
 		Outputs
-		X  : [ n+1, D ]       ( x_1, ..., x_n )
-		P  : [ n+1, D, D]
+		x  : [ n+1, D ]       ( x_1, ..., x_n )
+		s  : [ n+1, D, D]
 		"""
 		n = len(Y)
-		X = np.zeros(( n, self.num_states ))
-		P = np.zeros(( n, self.num_states, self.num_states ))
-		m, S = x0, S_x0
+		x = np.zeros(( n, self.num_states ))
+		s = np.zeros(( n, self.num_states, self.num_states ))
+		M, S = x0, S_x0
 		for k in range( n ):
-			X[k], P[k] = self._filter(Y[k], m, S)
+			x[k], s[k] = self._filter(Y[k], M, S)
 			if k < n-1:
-				m, S = self.predict_x_dist(X[k], P[k], U[k])
-		return X, P
+				M, S = self.predict_x_dist(x[k], s[k], U[k])
+		return x, s
 
-	def smooth (self, X, P, U):
+	def smooth (self, X, S, U):
 		"""
 		Iteratively smooths sequences X = [x_1, ..., x_n] and 
-		P = [P_1, ..., P_n] with controls U = [u_1, ..., u_n]
+		S = [S_1, ..., S_n] with controls U = [u_1, ..., u_n]
 		"""
 		n  = len(X)
 		Xs = np.zeros(( n, self.num_states ))
-		Ps = np.zeros(( n, self.num_states, self.num_states ))
+		Ss = np.zeros(( n, self.num_states, self.num_states ))
 		Xs[-1] = X[-1]
-		Ps[-1] = P[-1]
+		Ss[-1] = S[-1]
 		for k in np.arange(1, n)[::-1]:
-		    Xs[k-1],Ps[k-1] = self._smooth(X[k-1], P[k-1], Xs[k], Ps[k], U[k-1])
-		return Xs, Ps
+		    Xs[k-1],Ss[k-1] = self._smooth(X[k-1], S[k-1], Xs[k], Ss[k], U[k-1])
+		return Xs, Ss
 
-	def _smooth (self, xk, Pk, xk1, Pk1, u_k):
+	def _smooth (self, xk, Sk, xk1, Sk1, u_k):
 		"""
-		Inputs xk, Pk, xk1, P_{k+1}, u_k
-			p( x_k | y_{1:k} ) = N( xk, Pk )
-			p( x_{k+1} | y_{1:T}, u_k ) = N( xk1, Pk1 )
+		Inputs xk, Sk, xk1, S_{k+1}, uk
+			p( x_k | y_{1:k} ) = N( xk, Sk )
+			p( x_{k+1} | y_{1:T}, uk ) = N( xk1, Sk1 )
 
-		Produces smoothed x_k, P_k
-			p( x_k | y_{1:T} ) = N( xs, Ps )
+		Produces smoothed x_k, S_k
+			p( x_k | y_{1:T} ) = N( xs, Ss )
 		"""
-		m, S, V = self.predict_x_dist(xk, Pk, u_k, cross_cov=True)
+		m, S, V = self.predict_x_dist(xk, Sk, uk, cross_cov=True)
 		J  = np.matmul( V, np.linalg.inv(S) )
 		xs = xk + np.matmul( J, xk1 - m )
-		Ps = Pk + np.matmul( J, np.matmul( Pk1 - S, J.T ) )
-		return xs, Ps
+		Ss = Sk + np.matmul( J, np.matmul( Sk1 - S, J.T ) )
+		return xs, Ss
 
