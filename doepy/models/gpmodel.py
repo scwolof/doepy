@@ -27,12 +27,17 @@ import numpy as np
 from GPy.models import GPRegression
 from GPy.kern import RBF
 
+import logging
+logging.getLogger('GP').propagate = False
+
 from .model import Model
+from ..training import generate_training_data
 from ..transform import BoxTransform, MeanTransform
+from ..constraints import MeanStateConstraint
 from ..approximate_inference import rbf_moment_match
 
 class GPModel (Model):
-	def __init__ (self, f, num_inputs, *args, delta_transition=False, \
+	def __init__ (self, f, num_inputs, *args, x_bounds, delta_transition=False,\
 		          transform=True, **kwargs):
 		"""
 		We assume we do not have gradient information for f
@@ -51,7 +56,9 @@ class GPModel (Model):
 
 		self.gps = []
 		self.hyp = []
-		self.transform = transform
+		self.x_bounds     = x_bounds
+		self.x_constraint = None
+		self.transform    = transform
 		if self.transform:
 			self.z_transform  = None
 			self.t_transform  = None
@@ -104,6 +111,31 @@ class GPModel (Model):
 		self.z_transform = MeanTransform( Z )
 		self.t_transform = BoxTransform( T )
 		return self.t_transform(T), self.z_transform(Z)
+
+	"""
+	State constraints
+	"""
+	def initialise_x_constraint (self):
+		self.x_constraint = MeanStateConstraint(self.x_bounds)
+		self.c, self.dcdU = None, None
+
+	def update_x_constraint (self, x, p, dxdU, dpdU):
+		if self.x_constraint is None:
+			self.initialise_x_constraint()
+		c, dcdx, dcdp = self.x_constraint(x, p, grad=True)
+		dcdU = np.einsum('ij,jnk->ink',dcdx,dxdU) \
+		       + np.einsum('ijk,jknd->ind',dcdp,dpdU)
+		if self.c is None:
+			self.c    = c[None,:]
+			self.dcdU = dcdU[None,:]
+		else:
+			self.c    = np.vstack((self.c, c))
+			self.dcdU = np.vstack((self.dcdU, dcdU))
+
+	def get_x_constraint (self):
+		if self.x_constraint is None:
+			return None
+		return self.c, self.dcdU
 
 	"""
 	State prediction

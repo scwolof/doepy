@@ -146,6 +146,20 @@ class Model:
 		assert is_symmetric_matrix(P0)
 		self._P0 = P0.copy()
 
+	"""
+	State constraints
+	- For surrogate models that want to enforce state constraints in order
+	  not to deviate too far from training data.
+	"""
+	def initialise_x_constraint (self):
+		pass
+
+	def update_x_constraint (self, x, p, dxdU, dpdU):
+		pass
+
+	def get_x_constraint (self):
+		return None
+
 
 	"""
 	Function calls
