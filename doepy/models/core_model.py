@@ -27,7 +27,7 @@ from numpy.random import multivariate_normal as mvn
 
 from ..utils import is_symmetric_matrix, is_pos_def
 
-class Model:
+class CoreModel:
 	def __init__ (self, f, num_inputs, H, Q, R, x0, P0=None, Su=None):
 		"""
 		f  : transition function x_{k+1} = f(x_k, u_k)

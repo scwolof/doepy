@@ -24,9 +24,9 @@ SOFTWARE.
 
 import numpy as np 
 
-from .model import Model
+from .core_model import CoreModel
 
-class LinearModel (Model):
+class LinearModel (CoreModel):
 	def __init__ (self, F, B, *args, **kwargs):
 		"""
 		Model:

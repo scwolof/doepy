@@ -24,9 +24,9 @@ SOFTWARE.
 
 import numpy as np 
 
-from .model import Model
+from .core_model import CoreModel
 
-class NonLinearModel (Model):
+class NonLinearModel (CoreModel):
 	def __init__ (self, f, num_inputs, *args, hessian=False, **kwargs):
 		"""
 		Transition function f is differentiable:

@@ -30,13 +30,14 @@ from GPy.kern import RBF
 import logging
 logging.getLogger('GP').propagate = False
 
-from .model import Model
+from .core_model import CoreModel
+
 from ..training import generate_training_data
 from ..transform import BoxTransform, MeanTransform
 from ..constraints import MeanStateConstraint
 from ..approximate_inference import rbf_moment_match
 
-class GPModel (Model):
+class GPModel (CoreModel):
 	def __init__ (self, f, num_inputs, *args, x_bounds, delta_transition=False,\
 		          transform=True, **kwargs):
 		"""
