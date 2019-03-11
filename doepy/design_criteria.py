@@ -28,16 +28,28 @@ class DesignCriterion:
 	def __call__ (self, M, S, grad=False):
 		"""
 		Input:
-		M	[num_models x num_meas]              Matrix of predictive means
-		S	[num_models x num_meas x num_meas]   Matrix of predictive covariances
-		grad                                     Return gradients wrt M and S
+		M	[num_models x num_meas]             Matrix of predictive means
+		S	[num_models x num_meas x num_meas]  Matrix of predictive covariances
+		grad                                    Return gradients wrt M and S
 
 		Output:
-		dc		Design criterion for M, S
-		dcdM	Gradient d dc / d M
-		dcdS	Gradient d dc / d S
+		dc      Design criterion for M, S
+		dcdM    Gradient d dc / d M
+		dcdS    Gradient d dc / d S
 		"""
 		return self._criterion(M, S, grad=grad)
+
+
+class NullCriterion (DesignCriterion):
+	"""
+	Constant zero objective function
+	"""
+	def _criterion (self, M, S, grad=False):
+		if not grad:
+			return 0.
+		dcdM = np.zeros(M.shape)
+		dcdS = np.zeros(M.shape + (M.shape[1],))
+		return 0., dcdM, dcdS
 
 
 class HR (DesignCriterion):
@@ -45,8 +57,8 @@ class HR (DesignCriterion):
 	Hunter and Reiner's design criterion
 
 	- Hunter and Reiner (1965)
-		Designs for discriminating between two rival models.
-		Technometrics 7(3):307-323
+	    Designs for discriminating between two rival models.
+	    Technometrics 7(3):307-323
 	"""
 	def __init__ (self, W=None):
 		DesignCriterion.__init__(self)
@@ -84,12 +96,12 @@ class BH (DesignCriterion):
 	models by Prasad and Someswara Rao.
 
 	- Box and Hill (1967)
-		Discrimination among mechanistic models.
-		Technometrics 9(1):57-71
+	    Discrimination among mechanistic models.
+	    Technometrics 9(1):57-71
 	- Prasad and Someswara Rao (1977)
-		Use of expected likelihood in sequential model 
-		discrimination in multiresponse systems.
-		Chem. Eng. Sci. 32:1411-1418
+	    Use of expected likelihood in sequential model 
+	    discrimination in multiresponse systems.
+	    Chem. Eng. Sci. 32:1411-1418
 	"""
 	def __init__ (self, w=None):
 		DesignCriterion.__init__(self)
@@ -134,17 +146,17 @@ class BF (DesignCriterion):
 	Buzzi-Ferraris et al.'s design criterion.
 
 	- Buzzi-Ferraris and Forzatti (1983)
-		Sequential experimental design for model discrimination 
-		in the case of multiple responses.
-		Chem. Eng. Sci. 39(1):81-85
+	    Sequential experimental design for model discrimination 
+	    in the case of multiple responses.
+	    Chem. Eng. Sci. 39(1):81-85
 	- Buzzi-Ferraris et al. (1984)
-		Sequential experimental design for model discrimination 
-		in the case of multiple responses.
-		Chem. Eng. Sci. 39(1):81-85
+	    Sequential experimental design for model discrimination 
+	    in the case of multiple responses.
+	    Chem. Eng. Sci. 39(1):81-85
 	- Buzzi-Ferraris et al. (1990)
-		An improved version of sequential design criterion for 
-		discrimination among rival multiresponse models.
-		Chem. Eng. Sci. 45(2):477-481
+	    An improved version of sequential design criterion for 
+	    discrimination among rival multiresponse models.
+	    Chem. Eng. Sci. 45(2):477-481
 	"""
 	def __init__ (self, noise_var):
 		DesignCriterion.__init__(self)
@@ -180,9 +192,9 @@ class AW (DesignCriterion):
 	Modified Expected Akaike Weights Decision Criterion.
 
 	- Michalik et al. (2010). 
-		Optimal experimental design for discriminating numerous 
-		model candidates: The AWDC criterion.
-		Ind. Eng. Chem. Res. 49:913-919
+	    Optimal experimental design for discriminating numerous 
+	    model candidates: The AWDC criterion.
+	    Ind. Eng. Chem. Res. 49:913-919
 	"""
 	def __init__ (self, w=None, num_param=None):
 		DesignCriterion.__init__(self)
@@ -233,8 +245,8 @@ class JR (DesignCriterion):
 	Quadratic Jensen-Renyi divergence.
 
 	- Olofsson et al. (2019)
-		GPdoemd: a Python package for design of experiments for model discrimination
-		arXiv pre-print 1810.02561 (https://arxiv.org/abs/1810.02561)
+	    GPdoemd: a Python package for design of experiments for model discrimination
+	    arXiv pre-print 1810.02561 (https://arxiv.org/abs/1810.02561)
 	"""
 	def __init__ (self, w=None):
 		DesignCriterion.__init__(self)
@@ -302,11 +314,11 @@ class JR (DesignCriterion):
 					dphidmj = iSmj - np.matmul(iS[j], iiSSij)
 					
 					dphidsi = -np.matmul(iS[i], np.matmul(mimi, iS[i])) + iS[i]\
-						- np.sum(np.sum(iiSiS[None,None,:,:] * \
-						( iS[i,:,None,:,None] * iS[i,None,:,None,:] ),axis=3),axis=2)
+					    - np.sum(np.sum(iiSiS[None,None,:,:] * \
+					    ( iS[i,:,None,:,None] * iS[i,None,:,None,:] ),axis=3),axis=2)
 					dphidsj = -np.matmul(iS[j], np.matmul(mjmj, iS[j])) + iS[j]\
-						- np.sum(np.sum(iiSiS[None,None,:,:] * \
-						( iS[j,:,None,:,None] * iS[j,None,:,None,:] ),axis=3),axis=2)
+					    - np.sum(np.sum(iiSiS[None,None,:,:] * \
+					    ( iS[j,:,None,:,None] * iS[j,None,:,None,:] ),axis=3),axis=2)
 
 					mmij    = mij[:,None] * mij[None,:]
 					for n in range(num_meas):
@@ -314,13 +326,13 @@ class JR (DesignCriterion):
 							Smmi = mij[:,None] * M[i]
 							Smmj = mij[:,None] * M[j]
 							dphidsi[n,m] += 2 * np.sum(iiSiS.T[:,None,:] \
-										* Smmi[:,:,None] \
-										* (iS[i][:,[m]]*iS[i][:,n])[None,:,:]) \
-										- np.sum(mmij * iiSiSSi[:,[n]] * iiSiSSi[:,m])
+							        * Smmi[:,:,None] \
+							        * (iS[i][:,[m]]*iS[i][:,n])[None,:,:]) \
+							        - np.sum(mmij * iiSiSSi[:,[n]] * iiSiSSi[:,m])
 							dphidsj[n,m] += 2 * np.sum(iiSiS.T[:,None,:] \
-										* Smmj[:,:,None] \
-										* (iS[j][:,[m]]*iS[j][:,n])[None,:,:]) \
-										- np.sum(mmij * iiSiSSj[:,[n]] * iiSiSSj[:,m])
+							        * Smmj[:,:,None] \
+							        * (iS[j][:,[m]]*iS[j][:,n])[None,:,:]) \
+							        - np.sum(mmij * iiSiSSj[:,[n]] * iiSiSSj[:,m])
 					
 					dT2dM[i] -= exp * dphidmi
 					dT2dM[j] -= exp * dphidmj
