@@ -27,17 +27,20 @@ import numpy as np
 from GPy.models import GPRegression
 from GPy.kern import RBF
 
+import warnings
 import logging
 logging.getLogger('GP').propagate = False
 
-from .core_model import CoreModel
+from .model import Model
 
 from ..training import generate_training_data
 from ..transform import BoxTransform, MeanTransform
 from ..constraints import MeanStateConstraint
 from ..approximate_inference import rbf_moment_match
 
-class GPModel (CoreModel):
+from pdb import set_trace as st
+
+class GPModel (Model):
 	def __init__ (self, candidate_model):
 		"""
 		We assume we do not have gradient information for f
@@ -56,6 +59,9 @@ class GPModel (CoreModel):
 
 		self.gps = []
 		self.hyp = []
+
+		assert candidate_model.u_bounds is not None
+		self.u_bounds = candidate_model.u_bounds
 
 		assert candidate_model.x_bounds is not None
 		self.x_bounds = candidate_model.x_bounds
@@ -80,40 +86,57 @@ class GPModel (CoreModel):
 	def _gp_regression (self, X, Y, kern, **kwargs):
 		return GPRegression(X, Y, kern)
 
-	def train (self, X, U, Z=None, hyp=None, noise_var=1e-6, **kwargs):
-		assert len(U) == len(X)
+	def _train_gp (self, inp, out, active_dims, noise_var, hyp=None, **kwargs):
+		dim  = len( active_dims )
+		kern = RBF(dim, active_dims=active_dims, ARD=True)
+		with warnings.catch_warnings():
+			warnings.filterwarnings("ignore", 
+					message="Your kernel has a different input dimension")
+			out = out.reshape((inp.shape[0], 1))
+			gp  = self._gp_regression(inp, out, kern, **kwargs)
+		if hyp is None:
+			# Constrain noise variance
+			gp.Gaussian_noise.variance.constrain_fixed(noise_var)
+			# Constrain lengthscales
+			LS = np.max(inp, axis=0) - np.min(inp, axis=0)
+			#st()
+			for d, ad in enumerate(active_dims):
+				gp.kern.lengthscale[[d]].constrain_bounded(
+					lower=1e-25, upper=10.*LS[ad], warning=False )
+			# Optimise hyperparameters
+			gp.optimize()
+		else:
+			# Assign existing hyperparameter values
+			gp.update_model(False)
+			gp.initialize_parameter()
+			gp[:] = hyp
+			gp.update_model(True)
+		return gp
+
+	def train (self, active_dims, hyp=None, noise_var=1e-6, **kwargs):
+		dic = {'active_dims': active_dims}
+		nom = 'num_data_points_per_num_dim_combo'
+		if nom in kwargs:
+			dic[nom] = kwargs.get(nom)
+		X,U,Z = generate_training_data(self.f,self.x_bounds,self.u_bounds,**dic)
 		
-		if Z is None:
-			if self.delta_transition:
-				Z = np.array([ self.f(x,u) - x for x,u in zip(X,U) ])
-			else:
-				Z = np.array([ self.f(x,u) for x,u in zip(X,U) ])
-		Tt, Zt = self._training_data(np.c_[ X, U ], Z)
+		if self.delta_transition:
+			Z = [ z - x for z,x in zip(Z,X) ]
+		T = [ np.c_[ x, u ] for x,u in zip(X, U) ]
+
+		if self.transform:
+			# TODO
+			pass
 
 		self.hyp = []
-		for d in range(self.num_states):
-			dim  = Tt.shape[1]
-			kern = RBF(input_dim=dim, ARD=True)
-			gp   = self._gp_regression(Tt, Zt[:,[d]], kern, **kwargs)
-			if hyp is None:
-				# Constrain noise variance
-				gp.Gaussian_noise.variance.constrain_fixed(noise_var)
-				# Constrain lengthscales
-				LS = np.max(Tt, axis=0) - np.min(Tt, axis=0)
-				for dd in range(dim):
-					gp.kern.lengthscale[[dd]].constrain_bounded(
-						lower=0., upper=10.*LS[dd], warning=False )
-				gp.optimize()
-			else:
-				gp.update_model(False)
-				gp.initialize_parameter()
-				gp[:] = hyp[d]
-				gp.update_model(True)
+		for t, z, ad in zip(T, Z, active_dims):
+			gp = self._train_gp(t, z, ad, noise_var, hyp, **kwargs)
 			self.hyp.append( gp[:] )
 			self.gps.append( gp )
 
 	"""
 	Transform training data
+	"""
 	"""
 	def _training_data (self, T, Z):
 		if not self.transform:
@@ -121,6 +144,7 @@ class GPModel (CoreModel):
 		self.z_transform = MeanTransform( Z )
 		self.t_transform = BoxTransform( T )
 		return self.t_transform(T), self.z_transform(Z)
+	"""
 
 	"""
 	State constraints
@@ -134,7 +158,7 @@ class GPModel (CoreModel):
 			self.initialise_x_constraint()
 		c, dcdx, dcdp = self.x_constraint(x, p, grad=True)
 		dcdU = np.einsum('ij,jnk->ink',dcdx,dxdU) \
-		       + np.einsum('ijk,jknd->ind',dcdp,dpdU)
+			   + np.einsum('ijk,jknd->ind',dcdp,dpdU)
 		if self.c is None:
 			self.c    = c[None,:]
 			self.dcdU = dcdU[None,:]

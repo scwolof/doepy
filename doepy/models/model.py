@@ -27,7 +27,7 @@ from numpy.random import multivariate_normal as mvn
 
 from ..utils import is_symmetric_matrix, is_pos_def
 
-class CoreModel:
+class Model:
 	def __init__ (self, candidate_model):
 		"""
 		Model:

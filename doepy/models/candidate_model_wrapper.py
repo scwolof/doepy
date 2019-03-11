@@ -24,7 +24,7 @@ SOFTWARE.
 
 import numpy as np 
 
-class CandidateModel:
+class CandidateWrapper:
 	def __init__ (self, **kwargs):
 
 		# Function call to assign variable with given name
@@ -64,6 +64,8 @@ class CandidateModel:
 		self.name = assign_variable('name', str)
 		# Transition function handle
 		self.hessian = assign_variable('hessian', bool)
+		# Bounds on control inputs
+		self.u_bounds = assign_variable('u_bounds', np.ndarray)
 		# Bounds on latent states - for data-driven surrogate models
 		self.x_bounds = assign_variable('x_bounds', np.ndarray)
 		# Normalise inputs and training data in surrogate models
