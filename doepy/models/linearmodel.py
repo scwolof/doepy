@@ -27,13 +27,17 @@ import numpy as np
 from .core_model import CoreModel
 
 class LinearModel (CoreModel):
-	def __init__ (self, F, B, *args, **kwargs):
+	def __init__ (self, candidate_model):
 		"""
 		Model:
-			f(x_k, u_k) = F * x_k + B * u_k
+			f(x_k, u_k) = F * x_k  +  B * u_k
 		"""
-		f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
-		super().__init__(f, B.shape[1], *args, **kwargs)
+		assert candidate_model.F is not None
+		assert candidate_model.B is not None
+		F, B = candidate_model.F, candidate_model.B
+		candidate_model.f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
+
+		super().__init__(candidate_model)
 
 		self.F  = F
 		self.B  = B

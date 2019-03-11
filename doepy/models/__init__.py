@@ -1,7 +1,8 @@
 
-from .model import Model
+from .core_model import CoreModel
 from .linearmodel import LinearModel
 from .nonlinearmodel import NonLinearModel
+from .candidate_model import CandidateModel
 
 try:
 	import GPy

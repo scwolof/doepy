@@ -27,7 +27,7 @@ import numpy as np
 from .core_model import CoreModel
 
 class NonLinearModel (CoreModel):
-	def __init__ (self, f, num_inputs, *args, hessian=False, **kwargs):
+	def __init__ (self, candidate_model):
 		"""
 		Transition function f is differentiable:
 			g, dgdx, dgdu = f( x_k, u_k, grad=True )
@@ -46,7 +46,11 @@ class NonLinearModel (CoreModel):
 			WARNING: STABILITY NOT TESTED WITHOUT HESSIAN INFORMATION
 		"""
 		super().__init__(f, num_inputs, *args, **kwargs)
-		self.hessian = hessian
+
+		if candidate_model.hessian is None:
+			self.hessian = False
+		else:
+			self.hessian = candidate_model.hessian
 
 	"""
 	State prediction

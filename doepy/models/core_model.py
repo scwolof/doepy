@@ -28,31 +28,23 @@ from numpy.random import multivariate_normal as mvn
 from ..utils import is_symmetric_matrix, is_pos_def
 
 class CoreModel:
-	def __init__ (self, f, num_inputs, H, Q, R, x0, P0=None, Su=None):
+	def __init__ (self, candidate_model):
 		"""
-		f  : transition function x_{k+1} = f(x_k, u_k)
-		H  : observation matrix
-		Q  : process noise covariance matrix
-		R  : measurement noise covariance
-		x0 : Initial state mean
-		P0 : Initial state covariance
-		Su : control input covariance
-
 		Model:
 			x_{k+1} = f( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
 			    y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
 		with 
-			x_0 ~ N(x0, P0), u_k ~ N(u_k, Su)
+			x_0 ~ N(x0, S_x0), u_k ~ N(u_k, Su)
 			u_k of dimension num_inputs
 		"""
-		self.f  = f
-		self.H  = H
-		self.Q  = Q
-		self.R  = R
+		self.f = candidate_model.f
+		self.H = candidate_model.H
+		self.Q = candidate_model.Q
+		self.R = candidate_model.R
 
-		self.num_inputs = num_inputs
+		self.num_inputs = candidate_model.num_inputs
 		assert isinstance(self.num_inputs, int) and self.num_inputs > 0
-		self.Su = Su
+		self.Su = candidate_model.Su
 
 		self.num_states = self.Q.shape[0]
 		assert self.num_states == self.H.shape[1]
@@ -60,8 +52,8 @@ class CoreModel:
 		self.num_meas = self.H.shape[0]
 		assert self.num_meas == self.R.shape[0]
 
-		self.x0 = x0
-		self.P0 = P0
+		self.x0 = candidate_model.x0
+		self.S_x0 = candidate_model.S_x0
 
 	"""
 	Transition function
@@ -137,14 +129,14 @@ class CoreModel:
 	Initial state covariance
 	"""
 	@property
-	def P0 (self):
-		return self._P0 
-	@P0.setter
-	def P0 (self, P0):
-		if P0 is None:
-			P0 = np.zeros(( self.num_states, self.num_states ))
-		assert is_symmetric_matrix(P0)
-		self._P0 = P0.copy()
+	def S_x0 (self):
+		return self._S_x0 
+	@S_x0.setter
+	def S_x0 (self, S_x0):
+		if S_x0 is None:
+			S_x0 = np.zeros(( self.num_states, self.num_states ))
+		assert is_symmetric_matrix(S_x0)
+		self._S_x0 = S_x0.copy()
 
 	"""
 	State constraints
@@ -199,7 +191,7 @@ class CoreModel:
 		If U.ndim == 1, one-step prediction
 		If U.ndim == 2, multi-step prediction
 		"""
-		x0 = x0 if not initial_uncertainty else mvn(x0, self.P0)
+		x0 = x0 if not initial_uncertainty else mvn(x0, self.S_x0)
 
 		if U.ndim == 1:
 			return self._sample(x0, U)
@@ -331,24 +323,24 @@ class CoreModel:
 		Pk = S - np.matmul(K, SH.T)
 		return mk, Pk
 
-	def predict_filter (self, Y, x0, P0, U):
+	def predict_filter (self, Y, x0, S_x0, U):
 		"""
 		Filter sequence, based on observations Y, controls U,
-		and with prediction p(x_1) ~ N(x0, P0)
+		and with prediction p(x_1) ~ N(x0, S_x0)
 
-		Y  : [ n, E ]		( y_1, ..., y_n )
-		x0 : [ D, ]
-		P0 : [ D, D ]
-		U  : [ n, D_U ]		( u_1, ..., u_{n-1} )
+		Y    : [ n, E ]       ( y_1, ..., y_n )
+		x0   : [ D, ]
+		S_x0 : [ D, D ]
+		U    : [ n, D_U ]     ( u_1, ..., u_{n-1} )
 
 		Outputs
-		X  : [ n+1, D ]     ( x_1, ..., x_n )
+		X  : [ n+1, D ]       ( x_1, ..., x_n )
 		P  : [ n+1, D, D]
 		"""
 		n = len(Y)
 		X = np.zeros(( n, self.num_states ))
 		P = np.zeros(( n, self.num_states, self.num_states ))
-		m, S = x0, P0
+		m, S = x0, S_x0
 		for k in range( n ):
 			X[k], P[k] = self._filter(Y[k], m, S)
 			if k < n-1:

@@ -38,8 +38,7 @@ from ..constraints import MeanStateConstraint
 from ..approximate_inference import rbf_moment_match
 
 class GPModel (CoreModel):
-	def __init__ (self, f, num_inputs, *args, x_bounds, delta_transition=False,\
-		          transform=True, **kwargs):
+	def __init__ (self, candidate_model):
 		"""
 		We assume we do not have gradient information for f
 
@@ -53,17 +52,27 @@ class GPModel (CoreModel):
 		transform : transform [x,u] -> [0, 1]^dim, and ( x_{k+1} - m) / std
 		## WARNING - transform suffering problems ##
 		"""
-		super().__init__(f, num_inputs, *args, **kwargs)
+		super().__init__(candidate_model)
 
 		self.gps = []
 		self.hyp = []
-		self.x_bounds     = x_bounds
+
+		assert candidate_model.x_bounds is not None
+		self.x_bounds = candidate_model.x_bounds
 		self.x_constraint = None
-		self.transform    = transform
+
+		if candidate_model.transform is None:
+			self.transform = False
+		else:
+			self.transform = candidate_model.transform
 		if self.transform:
-			self.z_transform  = None
-			self.t_transform  = None
-		self.delta_transition = delta_transition
+			self.z_transform = None
+			self.t_transform = None
+
+		if candidate_model.delta_transition is None:
+			self.delta_transition = False
+		else:
+			self.delta_transition = candidate_model.delta_transition
 
 	"""
 	Train GP surrogates
