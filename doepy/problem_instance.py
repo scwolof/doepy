@@ -100,6 +100,7 @@ class ProblemInstance:
 			p.append( model.P0 )
 			dxdU.append( np.zeros(( N, model.num_states, D)) )
 			dpdU.append( np.zeros(( N, model.num_states, model.num_states, D)) )
+			model.initialise_x_constraint()
 		Y = np.zeros(( M, E ))
 		S = np.zeros(( M, E, E ))
 		dYdU = np.zeros(( M, E, N, D))
@@ -130,6 +131,8 @@ class ProblemInstance:
 					dSdU[i,:,:,j] = np.matmul( dsdx, dxdU[i][j] ) \
 								+ np.einsum( 'imjk,jkn->imn', dsdp, dpdU[i][j] )
 
+				model.update_x_constraint(x, p, dxdU, dpdU)
+
 				# State constraint for model i at time n
 				for const in self.y_constraints:
 					c, dcdY, dcdS = const(Y[i], S[i], grad=True)
@@ -144,9 +147,14 @@ class ProblemInstance:
 			f -= ftmp   ## Minimisation -> negative maximisation
 			for j in range( n+1 ):
 				dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dYdU[:,:,j] ) \
-							+ np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j]) 
+							+ np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
+
+		for i, model in enumerate( self.models ):
+			res = model.get_x_constraint()
+			if not res is None:
+				C, dCdU = np.vstack((C, res[0])), np.vstack((dCdU, res[1]))
 
 		# flatten
 		dfdU = dfdU.reshape(u_flat.shape)
-		dCdU = dCdU.reshape((self.num_constraints,) + u_flat.shape)
+		dCdU = dCdU.reshape((-1,) + u_flat.shape)
 		return f, C, dfdU, dCdU
