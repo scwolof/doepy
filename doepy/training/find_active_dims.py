@@ -22,13 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-def find_active_dims (model, xbs, ubs, num_points=5, threshold=1e-10):
+import numpy as np
+
+def find_active_dims (f, xbs, ubs, num_points=5, threshold=1e-10):
 	"""
 	xbs - x bounds
 	ubs - u bounds
 	"""
-	D = model.num_states
-	B = model.num_inputs
+	D = xbs.shape[0]
+	B = ubs.shape[0]
 	
 	assert xbs.shape == (D, 2)
 	X = [ np.linspace(*xb, num_points) for xb in xbs ]
@@ -39,7 +41,7 @@ def find_active_dims (model, xbs, ubs, num_points=5, threshold=1e-10):
 	U = np.vstack([u for u in U]).T
 	
 	# N-1 model evaluations
-	Y = np.array([ model(X[n],U[n]) for n in range(num_points-1) ])
+	Y = np.array([ f(X[n],U[n]) for n in range(num_points-1) ])
 	
 	T  = np.c_[X, U]
 	Di = np.zeros((D+B, D))
@@ -48,7 +50,7 @@ def find_active_dims (model, xbs, ubs, num_points=5, threshold=1e-10):
 		for d1 in range(D+B):
 			t       = T[n].copy()
 			t [d1]  = T[n+1,d1]
-			y       = model(t[:D], t[D:])
+			y       = f(t[:D], t[D:])
 			Y, T    = np.vstack((Y, y)), np.vstack((T, t))
 			Di[d1] += np.abs(Y[n] - y)
 	
