@@ -42,26 +42,38 @@ class Model:
 
 		self.hessian = True
 
-		self.dict = \
-		    {'f':  self,
-		     'H':  self.H,
-		     'Q':  self.Q,
-		     'R':  self.R,
-		     'x0': self.x0,
-		     'P0': self.P0,
-		     'Su': self.Su,
-		     'num_inputs': self.num_inputs}
-
 		self.num_steps = 50
 		self.u_delta   = np.array([0.25] * self.num_inputs)
 		self.u_bounds  = np.array([[-0.5, 0.5]] * self.num_inputs)
 		self.y_bounds  = np.array([[-0.6, 0.6], [0., 1.]])
+
+		# State space feasibility
+		self.known_dim   = [0, 2]
+		self.x_bounds    = np.array([[None, None]]*self.num_states)
+		self.x_bounds[0] = self.y_bounds[0]
+		self.x_bounds[2] = self.y_bounds[1]
+
+	def get_candidate_dict (self):
+		return {'f':  self,
+		        'H':  self.H,
+		        'Q':  self.Q,
+		        'R':  self.R,
+		        'x0': self.x0,
+		        'S_u': self.Su,
+		        'S_x0': self.P0,
+		        'name': self.name,
+		        'hessian': True,
+		        'x_bounds': self.x_bounds,
+		        'u_bounds': self.u_bounds,
+		        'num_inputs': self.num_inputs}
 
 
 class M1 (Model):
 	def __init__ (self):
 		super().__init__(3)
 		self.name = 'M1'
+		# State space feasibility
+		self.x_bounds[1] = self.x_bounds[2]
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3 = x
@@ -92,6 +104,8 @@ class M2 (Model):
 	def __init__ (self):
 		super().__init__(3)
 		self.name = 'M2'
+		# State space feasibility
+		self.x_bounds[1] = self.x_bounds[2] + self.x_bounds[0] - self.u_bounds[0][::-1]
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3 = x
@@ -103,9 +117,9 @@ class M2 (Model):
 		if not grad:
 			return g
 		# dgdx
-		dgdx      = np.zeros((3,3))
-		dgdx[1]   = np.array([1., 0., 1.])
-		dgdx[2]   = np.array([1., u2, 0])
+		dgdx    = np.zeros((3,3))
+		dgdx[1] = np.array([1., 0., 1.])
+		dgdx[2] = np.array([1., u2, 0])
 		# dgdu
 		dgdu = np.array([[1.,0],[-1,0.],[0.,x2]])
 		# ddgddx
@@ -120,6 +134,9 @@ class M3 (Model):
 	def __init__ (self):
 		super().__init__(4)
 		self.name = 'M3'
+		# State space feasibility
+		self.x_bounds[3] = self.x_bounds[0] - self.u_bounds[0][::-1]
+		self.x_bounds[1] = self.x_bounds[2] + self.x_bounds[3]
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3, x4 = x
@@ -150,6 +167,11 @@ class M4 (Model):
 	def __init__ (self):
 		super().__init__(4)
 		self.name = 'M4'
+		# State space feasibility
+		self.x_bounds[3] = self.x_bounds[0] - self.u_bounds[0][::-1]
+		tmp = self.x_bounds[0][:,None] * self.x_bounds[3][None,:]
+		self.x_bounds[3] = np.array([ np.min(tmp), np.max(tmp) ])
+		self.x_bounds[1] = self.x_bounds[2] + self.x_bounds[3]
 
 	def __call__ (self, x, u, grad=False):
 		x1, x2, x3, x4 = x
