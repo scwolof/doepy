@@ -22,7 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+from os.path import isfile
 import numpy as np 
+import pickle
 
 from GPy.models import GPRegression
 from GPy.kern import RBF
@@ -58,7 +60,6 @@ class GPModel (Model):
 		super().__init__(candidate_model)
 
 		self.gps = []
-		self.hyp = []
 
 		assert candidate_model.u_bounds is not None
 		self.u_bounds = candidate_model.u_bounds
@@ -86,7 +87,7 @@ class GPModel (Model):
 	def _gp_regression (self, X, Y, kern, **kwargs):
 		return GPRegression(X, Y, kern)
 
-	def _train_gp (self, inp, out, active_dims, noise_var, hyp=None, **kwargs):
+	def _train_gp (self, inp, out, active_dims, noise_var=1e-6, hyp=None, **kwargs):
 		dim  = len( active_dims )
 		kern = RBF(dim, active_dims=active_dims, ARD=True)
 		with warnings.catch_warnings():
@@ -113,7 +114,7 @@ class GPModel (Model):
 			gp.update_model(True)
 		return gp
 
-	def train (self, active_dims, hyp=None, noise_var=1e-6, **kwargs):
+	def train (self, active_dims, noise_var=1e-6, hyp=None, **kwargs):
 		dic = {'active_dims': active_dims}
 		nom = 'num_data_points_per_num_dim_combo'
 		if nom in kwargs:
@@ -128,11 +129,57 @@ class GPModel (Model):
 			# TODO
 			pass
 
-		self.hyp = []
-		for t, z, ad in zip(T, Z, active_dims):
-			gp = self._train_gp(t, z, ad, noise_var, hyp, **kwargs)
-			self.hyp.append( gp[:] )
-			self.gps.append( gp )
+		self._train(T, Z, active_dims, noise_var, hyp=hyp, **kwargs)
+
+	def _train (self, T, Z, active_dims, noise_var=1e-6, hyp=None, **kwargs):
+		if hyp is None:
+			hyp = [None] * len(T)
+		for t, z, ad, h in zip(T, Z, active_dims, hyp):
+			gp = self._train_gp(t, z, ad, noise_var, hyp=h, **kwargs)
+			self.gps.append(gp)
+
+
+	"""
+	Save and load model
+	"""
+	def save (self, filename): # pragma: no cover
+		assert isinstance(filename, str)
+		# Filename ending
+		suffix = '.doepy'
+		lensuf = len(suffix)
+		if len(filename) <= lensuf or not filename[-lensuf:] == suffix:
+			filename += suffix
+
+		T, Z, active_dims, hyp = [], [], [], []
+		for gp in self.gps:
+			T.append(gp.X)
+			Z.append(gp.Y)
+			hyp.append(gp[:])
+			active_dims.append(gp.kern.active_dims)
+
+		save_dict = {'T':T, 'Z':Z, 'active_dims':active_dims, 'hyp':hyp}
+		with open(filename,'wb') as f:
+			pickle.dump(save_dict, f, pickle.HIGHEST_PROTOCOL)
+
+	def load (self, filename, **kwargs): # pragma: no cover
+		assert isinstance(filename, str)
+		# Filename ending
+		suffix = '.doepy'
+		lensuf = len(suffix)
+		if len(filename) <= lensuf or not filename[-lensuf:] == suffix:
+			filename += suffix
+
+		assert isfile(filename)
+		with open(filename,'rb') as f:
+			load_dict = pickle.load(f)
+
+		T = load_dict['T']
+		Z = load_dict['Z']
+		hyp = load_dict['hyp']
+		active_dims = load_dict['active_dims']
+
+		self._train(T, Z, active_dims, hyp=hyp, **kwargs)
+
 
 	"""
 	Transform training data
