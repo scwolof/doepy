@@ -45,7 +45,7 @@ class NonLinearModel (CoreModel):
 
 			WARNING: STABILITY NOT TESTED WITHOUT HESSIAN INFORMATION
 		"""
-		super().__init__(f, num_inputs, *args, **kwargs)
+		super().__init__(candidate_model)
 
 		if candidate_model.hessian is None:
 			self.hessian = False
