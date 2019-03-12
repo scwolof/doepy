@@ -37,6 +37,10 @@ class Model:
 			x_0 ~ N(x0, S_x0), u_k ~ N(u_k, S_u)
 			u_k of dimension num_inputs
 		"""
+		self.name = candidate_model.name
+		if self.name is None:
+			self.name = 'Model' + np.random.randint(1000)
+
 		self.f = candidate_model.f
 		self.H = candidate_model.H
 		self.Q = candidate_model.Q
@@ -146,7 +150,7 @@ class Model:
 	def initialise_x_constraints (self):
 		pass
 
-	def update_x_constraints (self, x, p, dxdU, dpdU):
+	def update_x_constraints (self, x, s, dxdU, dsdU):
 		pass
 
 	def get_x_constraints (self):
@@ -364,7 +368,7 @@ class Model:
 		    Xs[k-1],Ss[k-1] = self._smooth(X[k-1], S[k-1], Xs[k], Ss[k], U[k-1])
 		return Xs, Ss
 
-	def _smooth (self, xk, Sk, xk1, Sk1, u_k):
+	def _smooth (self, xk, Sk, xk1, Sk1, uk):
 		"""
 		Inputs xk, Sk, xk1, S_{k+1}, uk
 			p( x_k | y_{1:k} ) = N( xk, Sk )
