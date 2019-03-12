@@ -6,13 +6,17 @@ The slsqp code is taken from scipy.optimize.slsqp._minimize_slsqp
 import numpy as np 
 from scipy.optimize._slsqp import slsqp as scipy_slsqp
 
-def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
+def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6, constraint_factor=1.):
 	"""
 	Wrapping function for scipy SLSQP function to solve control problems with
 	inequality constraints.
 	"""
 	# Transform x0 into an array.
 	x = np.asfarray(x0).flatten()
+
+	# Constraint factor
+	assert isinstance(constraint_factor, float)
+	constraint_factor = np.max(( np.finfo(float).eps, constraint_factor ))
 
 	# m = The total number of constraints
 	m = int(problem_instance.num_constraints)
@@ -76,8 +80,9 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 			f, c, df, dc = problem_instance(x)
 
 			f  = float(np.asarray(f))
+			c *= constraint_factor
 			df = np.append(df, 0.0)
-			dc = np.c_[ dc, np.zeros( la ) ]
+			dc = np.c_[ constraint_factor*dc, np.zeros( la ) ]
 			
 		# Call SLSQP
 		scipy_slsqp(m, 0, x, xl, xu, f, c, df, dc, acc, majiter, mode, w, jw,
@@ -87,6 +92,9 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 		# If exit mode is not -1 or 1, slsqp has completed
 		if abs(mode) != 1:
 			break
+
+	x   = x.reshape( x0.shape )
+	res = {'x':x, 'f':f, 'c':c, 'df':df, 'dc':dc}
 
 	status  = int(mode)
 	success = status == 0
@@ -101,6 +109,6 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 	            7: "Rank-deficient equality constraint subproblem HFTI",
 	            8: "Positive directional derivative for linesearch",
 	            9: "Iteration limit exceeded"}[ status ]
+	res.update( {'success':success, 'status':status, 'message':message} )
 
-	x = x.reshape( x0.shape )
-	return {'x':x, 'f':f, 'success':success, 'status':status, 'message':message}
+	return res
