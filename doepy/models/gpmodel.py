@@ -40,8 +40,6 @@ from ..transform import BoxTransform, MeanTransform
 from ..constraints import MeanStateConstraint
 from ..approximate_inference import rbf_moment_match
 
-from pdb import set_trace as st
-
 class GPModel (Model):
 	def __init__ (self, candidate_model):
 		"""
@@ -100,7 +98,6 @@ class GPModel (Model):
 			gp.Gaussian_noise.variance.constrain_fixed(noise_var)
 			# Constrain lengthscales
 			LS = np.max(inp, axis=0) - np.min(inp, axis=0)
-			#st()
 			for d, ad in enumerate(active_dims):
 				gp.kern.lengthscale[[d]].constrain_bounded(
 					lower=1e-25, upper=10.*LS[ad], warning=False )
@@ -196,27 +193,31 @@ class GPModel (Model):
 	"""
 	State constraints
 	"""
-	def initialise_x_constraint (self):
-		self.x_constraint = MeanStateConstraint(self.x_bounds)
-		self.c, self.dcdU = None, None
+	def initialise_x_constraints (self):
+		self.x_constraints = MeanStateConstraint(self.x_bounds)
+		self.c, self.dcdU  = None, None
 
-	def update_x_constraint (self, x, p, dxdU, dpdU):
-		if self.x_constraint is None:
-			self.initialise_x_constraint()
-		c, dcdx, dcdp = self.x_constraint(x, p, grad=True)
-		dcdU = np.einsum('ij,jnk->ink',dcdx,dxdU) \
-			   + np.einsum('ijk,jknd->ind',dcdp,dpdU)
+	def update_x_constraints (self, x, s, dxdU, dsdU):
+		if self.x_constraints is None:
+			self.initialise_x_constraints()
+		c, dcdx, dcds = self.x_constraints(x, s, grad=True)
+		dcdU = np.einsum('ij,njk->ink',dcdx,dxdU) \
+			   + np.einsum('ijk,njkd->ind',dcds,dsdU)
 		if self.c is None:
 			self.c    = c[None,:]
 			self.dcdU = dcdU[None,:]
 		else:
 			self.c    = np.vstack((self.c, c))
-			self.dcdU = np.vstack((self.dcdU, dcdU))
+			self.dcdU = np.vstack((self.dcdU, dcdU[None,:]))
 
-	def get_x_constraint (self):
-		if self.x_constraint is None:
+	def get_x_constraints (self):
+		if self.x_constraints is None:
 			return None
-		return self.c, self.dcdU
+		i,j,k,l = self.dcdU.shape
+		return self.c.reshape((i*j)), self.dcdU.reshape((i*j,k,l))
+
+	def num_x_constraints (self):
+		return 2 * self.num_states
 
 	"""
 	State prediction
@@ -232,7 +233,7 @@ class GPModel (Model):
 		dim  = len( tnew )
 		Snew = np.zeros((dim, dim))
 		Snew[:self.num_states, :self.num_states] = Sk
-		Snew[self.num_states:, self.num_states:] = self.Su
+		Snew[self.num_states:, self.num_states:] = self.S_u
 		if self.transform:
 			tnew = self.t_transform(tnew)
 			Snew = self.t_transform.cov(Snew)

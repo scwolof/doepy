@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import numpy as np 
+import numpy as np
 
 class ProblemInstance:
 	def __init__ (self, models, num_steps, div_criterion, u_bounds,
@@ -50,10 +50,15 @@ class ProblemInstance:
 		# Compute the number of constraints
 		self.num_constraints = 0
 		for const in self.u_constraints:
+			# Control constraints
 			self.num_constraints += const.num_constraints( self.num_steps )
 		for const in self.y_constraints:
+			# Observed state constraints
 			self.num_constraints += self.num_steps * self.num_models \
 									* const.num_constraints()
+		for model in self.models:
+			# Latent state constraints - for data-driven surrogate models
+			self.num_constraints += self.num_steps * model.num_x_constraints()
 
 
 	def sample_U (self, check_constraints=True):
@@ -94,13 +99,13 @@ class ProblemInstance:
 			i_c += L
 
 		# Initial states
-		x, p, dxdU, dpdU = [], [], [], []
+		x, s, dxdU, dsdU = [], [], [], []
 		for model in self.models:
 			x.append( model.x0 )
-			p.append( model.P0 )
+			s.append( model.S_x0 )
 			dxdU.append( np.zeros(( N, model.num_states, D)) )
-			dpdU.append( np.zeros(( N, model.num_states, model.num_states, D)) )
-			model.initialise_x_constraint()
+			dsdU.append( np.zeros(( N, model.num_states, model.num_states, D)) )
+			model.initialise_x_constraints()
 		Y = np.zeros(( M, E ))
 		S = np.zeros(( M, E, E ))
 		dYdU = np.zeros(( M, E, N, D))
@@ -113,25 +118,26 @@ class ProblemInstance:
 
 			# Predictive distributions at time n for model i
 			for i, model in enumerate( self.models ):
-				x[i], p[i], dxdx, dxdp, dxdu, dpdx, dpdp, dpdu \
-					= model.predict_x_dist(x[i], p[i], u, grad=True)
-				Y[i], S[i], dydx, dydp, dsdx, dsdp \
-					= model.predict_y_dist(x[i], p[i], grad=True)
+				x[i], s[i], dxdx, dxds, dxdu, dsdx, dsds, dsdu \
+					= model.predict_x_dist(x[i], s[i], u, grad=True)
+				Y[i], S[i], dYdx, dYds, dSdx, dSds \
+					= model.predict_y_dist(x[i], s[i], grad=True)
 				for j in range( n+1 ):
-					dxdU[i][j], dpdU[i][j] \
-						= np.matmul( dxdx, dxdU[i][j] ) \
-								+ np.einsum( 'ijk,jkn->in', dxdp, dpdU[i][j] ),\
-						  np.matmul( dpdx, dxdU[i][j] ) \
-								+ np.einsum( 'imjk,jkn->imn', dpdp, dpdU[i][j] )
+					dxdU[i][j], dsdU[i][j] \
+					    = np.matmul( dxdx, dxdU[i][j] ) \
+					            + np.einsum( 'ijk,jkn->in', dxds, dsdU[i][j] ),\
+					      np.matmul( dsdx, dxdU[i][j] ) \
+					            + np.einsum( 'imjk,jkn->imn', dsds, dsdU[i][j] )
 					if j == n:
 						dxdU[i][j] += dxdu
-						dpdU[i][j] += dpdu
-					dYdU[i,:,j]   = np.matmul( dydx, dxdU[i][j] ) \
-								+ np.einsum( 'ijk,jkn->in', dydp, dpdU[i][j] )
-					dSdU[i,:,:,j] = np.matmul( dsdx, dxdU[i][j] ) \
-								+ np.einsum( 'imjk,jkn->imn', dsdp, dpdU[i][j] )
+						dsdU[i][j] += dsdu
+					dYdU[i,:,j]   = np.matmul( dYdx, dxdU[i][j] ) \
+					            + np.einsum( 'ijk,jkn->in', dYds, dsdU[i][j] )
+					dSdU[i,:,:,j] = np.matmul( dSdx, dxdU[i][j] ) \
+					            + np.einsum( 'imjk,jkn->imn', dSds, dsdU[i][j] )
 
-				model.update_x_constraint(x, p, dxdU, dpdU)
+				# Update latent state constraints
+				model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
 
 				# State constraint for model i at time n
 				for const in self.y_constraints:
@@ -139,7 +145,7 @@ class ProblemInstance:
 					L = const.num_constraints()
 					C[ i_c: i_c+L ]    = c
 					dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdY,dYdU[i]) \
-								+ np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
+					                   + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
 					i_c += L
 
 			# Divergence between predictive distributions at time n
@@ -147,12 +153,16 @@ class ProblemInstance:
 			f -= ftmp   ## Minimisation -> negative maximisation
 			for j in range( n+1 ):
 				dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dYdU[:,:,j] ) \
-							+ np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
+				         + np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
 
+		# latent state constraints
 		for i, model in enumerate( self.models ):
-			res = model.get_x_constraint()
+			res = model.get_x_constraints()
 			if not res is None:
-				C, dCdU = np.vstack((C, res[0])), np.vstack((dCdU, res[1]))
+				L = res[0].shape[0]
+				C[ i_c: i_c+L ]    = res[0]
+				dCdU[ i_c: i_c+L ] = res[1]
+				i_c += L
 
 		# flatten
 		dfdU = dfdU.reshape(u_flat.shape)
