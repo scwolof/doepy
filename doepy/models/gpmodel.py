@@ -40,6 +40,8 @@ from ..transform import BoxTransform, MeanTransform
 from ..constraints import MeanStateConstraint
 from ..approximate_inference import rbf_moment_match
 
+default_noise_var = 1e-5
+
 class GPModel (Model):
 	def __init__ (self, candidate_model):
 		"""
@@ -85,7 +87,8 @@ class GPModel (Model):
 	def _gp_regression (self, X, Y, kern, **kwargs):
 		return GPRegression(X, Y, kern)
 
-	def _train_gp (self, inp, out, active_dims, noise_var=1e-6, hyp=None, **kwargs):
+	def _train_gp (self, inp, out, active_dims, noise_var=default_noise_var,
+	               hyp=None, **kwargs):
 		dim  = len( active_dims )
 		kern = RBF(dim, active_dims=active_dims, ARD=True)
 		with warnings.catch_warnings():
@@ -111,7 +114,7 @@ class GPModel (Model):
 			gp.update_model(True)
 		return gp
 
-	def train (self, active_dims, noise_var=1e-6, hyp=None, **kwargs):
+	def train (self, active_dims, noise_var=default_noise_var, hyp=None, **kwargs):
 		dic = {'active_dims': active_dims}
 		nom = 'num_data_points_per_num_dim_combo'
 		if nom in kwargs:
@@ -128,7 +131,8 @@ class GPModel (Model):
 
 		self._train(T, Z, active_dims, noise_var, hyp=hyp, **kwargs)
 
-	def _train (self, T, Z, active_dims, noise_var=1e-6, hyp=None, **kwargs):
+	def _train (self, T, Z, active_dims, noise_var=default_noise_var,
+	            hyp=None, **kwargs):
 		if hyp is None:
 			hyp = [None] * len(T)
 		for t, z, ad, h in zip(T, Z, active_dims, hyp):
