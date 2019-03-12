@@ -143,14 +143,17 @@ class Model:
 	- For surrogate models that want to enforce state constraints in order
 	  not to deviate too far from training data.
 	"""
-	def initialise_x_constraint (self):
+	def initialise_x_constraints (self):
 		pass
 
-	def update_x_constraint (self, x, p, dxdU, dpdU):
+	def update_x_constraints (self, x, p, dxdU, dpdU):
 		pass
 
-	def get_x_constraint (self):
+	def get_x_constraints (self):
 		return None
+
+	def num_x_constraints (self):
+		return 0
 
 
 	"""
