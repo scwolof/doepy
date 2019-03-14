@@ -74,34 +74,6 @@ class NonLinearModel (Model):
 		dSdx = dMdm[:,:,:self.num_states]
 		dSdu = dMdm[:,:,self.num_states:]
 
-		"""
-		M  = g
-		V  = np.matmul(Sk, dgdx.T)
-		St = np.matmul(self.Su, dgdu.T)
-		S  = np.matmul(dgdx, V) + np.matmul(dgdu, St) + self.Q
-		if not grad:
-			return (M, S, V) if cross_cov else (M, S)
-		# Compute gradients
-		dMdx = dgdx
-		dMds = np.zeros([self.num_states]*3)
-		dMdu = dgdu
-		dSdx = np.zeros([self.num_states]*3)
-		if self.hessian:
-			dSdx = np.einsum('ik,nkl->inl', V.T, ddgddx) \
-			     + np.einsum('nkl,li->nik', ddgddx, V) \
-			     + np.einsum('ik,nlk->inl', St.T, ddgdxu) \
-			     + np.einsum('nlk,ki->nil', ddgdxu, St)
-		dSds = np.zeros([self.num_states]*4)
-		for d1 in range( self.num_states ):
-			for d2 in range( self.num_states ):
-				dSds[d1,d2] = dgdx[d1][:,None] * dgdx[d2][None,:]
-		dSdu = np.zeros(( self.num_states, self.num_states, self.num_inputs ))
-		if self.hessian:
-			dSdu = np.einsum('ik,nkl->inl', St.T, ddgddu) \
-			     + np.einsum('nkl,li->nik', ddgddu, St) \
-			     + np.einsum('ik,nkl->inl', V.T, ddgdxu) \
-			     + np.einsum('nkl,ki->nil', ddgdxu, V)
-		"""
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
 		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu
