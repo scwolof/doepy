@@ -66,13 +66,31 @@ class NonLinearModel (Model):
 		else:
 			M, dfdx, dfdu = self.f( xk, u, grad=True )
 			ddM = None
-		dMdm = np.vstack((dfdx, dfdu))
-		S, V, dMds, dSdm, dSds, dVdm, dVds = taylor_moment_match(s, dMdm, ddM)
+		dMdm = np.concatenate((dfdx, dfdu), axis=1)
+		dim  = self.num_states + self.num_inputs
+		Snew = np.zeros((dim, dim))
+		Snew[:self.num_states, :self.num_states] = Sk
+		Snew[self.num_states:, self.num_states:] = self.S_u
 
+		if not grad:
+			S, V = taylor_moment_match(Snew, dMdm)
+			S   += self.Q
+			V    = V[:self.num_states]
+			return (M, S, V) if cross_cov else (M, S)
+
+		S,V,dMds,dSdm,dSds,dVdm,dVds = taylor_moment_match(Snew, dMdm, ddM, True)
+
+		S   += self.Q
+		V    = V[:self.num_states]
 		dMdx = dMdm[:,:self.num_states]
 		dMdu = dMdm[:,self.num_states:]
-		dSdx = dMdm[:,:,:self.num_states]
-		dSdu = dMdm[:,:,self.num_states:]
+		dMds = dMds[:,:self.num_states,:self.num_states]
+		dSdx = dSdm[:,:,:self.num_states]
+		dSdu = dSdm[:,:,self.num_states:]
+		dSds = dSds[:,:,:self.num_states,:self.num_states]
+		#dVdx = dVdm[:self.num_states,:,:self.num_states]
+		#dVdu = dVdm[:self.num_states,:,self.num_states:]
+		#dVds = dVds[:self.num_states,:,:self.num_states,:self.num_states]
 
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
