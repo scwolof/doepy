@@ -25,6 +25,7 @@ SOFTWARE.
 import numpy as np 
 
 from .model import Model
+from ..approximate_inference import taylor_moment_match
 
 class NonLinearModel (Model):
 	def __init__ (self, candidate_model):
@@ -57,9 +58,23 @@ class NonLinearModel (Model):
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		if self.hessian:
-			g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu = self.f( xk, u, grad=True )
+			M, dfdx, dfdu, ddfddx, ddfddu, ddfdxu = self.f( xk, u, grad=True )
+			x_xu   = np.concatenate(( ddfddx, ddfdxu ), axis=2)
+			ddfdxu = np.transpose(ddfdxu, axes=[0,2,1])
+			ux_u   = np.concatenate(( ddfdxu, ddfddu ), axis=2)
+			ddM    = np.concatenate(( x_xu, ux_u ), axis=1)
 		else:
-			g, dgdx, dgdu = self.f( xk, u, grad=True )
+			M, dfdx, dfdu = self.f( xk, u, grad=True )
+			ddM = None
+		dMdm = np.vstack((dfdx, dfdu))
+		S, V, dMds, dSdm, dSds, dVdm, dVds = taylor_moment_match(s, dMdm, ddM)
+
+		dMdx = dMdm[:,:self.num_states]
+		dMdu = dMdm[:,self.num_states:]
+		dSdx = dMdm[:,:,:self.num_states]
+		dSdu = dMdm[:,:,self.num_states:]
+
+		"""
 		M  = g
 		V  = np.matmul(Sk, dgdx.T)
 		St = np.matmul(self.Su, dgdu.T)
@@ -86,6 +101,7 @@ class NonLinearModel (Model):
 			     + np.einsum('nkl,li->nik', ddgddu, St) \
 			     + np.einsum('ik,nkl->inl', V.T, ddgdxu) \
 			     + np.einsum('nkl,ki->nil', ddgdxu, V)
+		"""
 		if not cross_cov:
 			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
 		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu

@@ -38,12 +38,12 @@ from .model import Model
 from ..training import generate_training_data
 from ..transform import BoxTransform, MeanTransform
 from ..constraints import MeanStateConstraint
-from ..approximate_inference import rbf_moment_match
+from ..approximate_inference import gp_taylor_moment_match
 
 default_noise_var = 1e-5
 
 class GPModel (Model):
-	def __init__ (self, candidate_model):
+	def __init__ (self, candidate_model, moment_match=gp_taylor_moment_match):
 		"""
 		We assume we do not have gradient information for f
 
@@ -80,6 +80,8 @@ class GPModel (Model):
 			self.delta_transition = False
 		else:
 			self.delta_transition = candidate_model.delta_transition
+
+		self.moment_match = moment_match
 
 	"""
 	Train GP surrogates
@@ -243,7 +245,7 @@ class GPModel (Model):
 			Snew = self.t_transform.cov(Snew)
 
 		# Moment matching
-		res = rbf_moment_match(self.gps, tnew, Snew, grad=grad)
+		res = self.moment_match(self.gps, tnew, Snew, grad=grad)
 		if grad:
 			M, S, V, dMdt, dMds, dSdt, dSds, dVdt, dVds = res
 		else:
