@@ -24,12 +24,15 @@ SOFTWARE.
 
 import numpy as np
 
-def rbf_moment_match (gps, mu, s2, grad=False, independent=False):
+from GPy.kern import RBF
+
+def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 	"""
 	Approximate inference with uncertain input x ~ N(mu, s2)
-	for function with GP prior given by gps (assumed to have RBF kernels).
+	for function with GP prior given by gps.
 
-	Can handle GPs with RBF kernels with different active dimensions.
+	- Only exact for GPs with RBF kernels
+	- Can handle GPs with RBF kernels with different active dimensions.
 
 	Inputs:
 	    gps   [ E ]      list, GPs (one for each independent target dimension)
@@ -56,6 +59,11 @@ def rbf_moment_match (gps, mu, s2, grad=False, independent=False):
 	Andrew McHutchon, Joe Hall, and Carl Edward Rasmussen) written in MATLAB.
 	"""
 	assert isinstance(gps, list) and not gps == []
+
+	# Check that GPs have RBF kernels
+	for e, gp in enumerate(gps):
+		assert isinstance(gp.kern, RBF),\
+		    'GP %d does not have RBF kernel: %s'%(e, gp.kern)
 
 	# Memory allocation
 	D = len( mu )        # Number of input dimensions
@@ -88,9 +96,8 @@ def rbf_moment_match (gps, mu, s2, grad=False, independent=False):
 			I   = gps[e].kern.active_dims
 			N   = gps[e].posterior.woodbury_vector.shape[0]
 			inp = np.zeros(( N, D ))
-			X   = gps[e].X if gps[e].X.shape[0] == N else gps[e].Z
 			# Centralise training inputs
-			inp[:,I] = X[:,I] - mu[None,I]
+			inp[:,I] = gps[e]._predictive_variable[:,I] - mu[None,I]
 
 		# First, some useful intermediate terms
 		beta = gps[e].posterior.woodbury_vector.flatten()
@@ -137,9 +144,8 @@ def rbf_moment_match (gps, mu, s2, grad=False, independent=False):
 			I   = gps[i].kern.active_dims
 			N   = gps[i].posterior.woodbury_vector.shape[0]
 			inp = np.zeros(( N, D ))
-			X   = gps[i].X if gps[i].X.shape[0] == N else gps[i].Z
 			# Centralise training inputs
-			inp[:,I] = X[:,I] - mu[None,I]
+			inp[:,I] = gps[i]._predictive_variable[:,I] - mu[None,I]
 
 		lengi = 1. / lengthscales[i]**2
 		ii    = inp * lengi
@@ -154,9 +160,8 @@ def rbf_moment_match (gps, mu, s2, grad=False, independent=False):
 				I   = gps[j].kern.active_dims
 				N   = gps[j].posterior.woodbury_vector.shape[0]
 				inp = np.zeros(( N, D ))
-				X   = gps[j].X if gps[j].X.shape[0] == N else gps[j].Z
 				# Centralise training inputs
-				inp[:,I] = X[:,I] - mu[None,I]
+				inp[:,I] = gps[j]._predictive_variable[:,I] - mu[None,I]
 
 				lengj = 1. / lengthscales[j]**2
 				ij    = inp * lengj
