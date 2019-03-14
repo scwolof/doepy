@@ -34,6 +34,7 @@ def taylor_moment_match (s, dMdm, d2Mdm2=None, grad=False):
 
 	if d2Mdm2 is None:
 		d2Mdm2 = np.zeros((E,D,D))
+		# TODO - more clever second derivative approximation?
 	
 	# Gradients
 	dMds = np.zeros((E,D,D))
