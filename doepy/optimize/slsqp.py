@@ -6,17 +6,13 @@ The slsqp code is taken from scipy.optimize.slsqp._minimize_slsqp
 import numpy as np 
 from scipy.optimize._slsqp import slsqp as scipy_slsqp
 
-def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6, constraint_factor=1.):
+def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 	"""
 	Wrapping function for scipy SLSQP function to solve control problems with
 	inequality constraints.
 	"""
 	# Transform x0 into an array.
 	x = np.asfarray(x0).flatten()
-
-	# Constraint factor
-	assert isinstance(constraint_factor, float)
-	constraint_factor = np.max(( np.finfo(float).eps, constraint_factor ))
 
 	# m = The total number of constraints
 	m = int(problem_instance.num_constraints)
@@ -69,6 +65,12 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6, constraint_factor=1.)
 	alpha, f0, gs, h1, h2, h3, h4, t, t0, tol = [ np.array(0, float) ] * 10
 	iexact, incons, ireset, itermx, line, n1, n2, n3 = [ np.array(0, int) ] * 8
 
+	# Rescaling factor to try to recover from mode 8 "Positive directional 
+	# derivative for linesearch" when running SLSQP optimisation algorithm
+	saved_f        = []
+	max_saved_f    = 20
+	rescale_factor = 1.
+
 	while 1:
 
 		if mode == 0 or mode == 1: 
@@ -79,21 +81,43 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6, constraint_factor=1.)
 			"""
 			f, c, df, dc = problem_instance(x)
 
-			f  = float(np.asarray(f))
-			c *= constraint_factor
-			df = np.append(df, 0.0)
-			dc = np.c_[ constraint_factor*dc, np.zeros( la ) ]
+			# Keep record of latest function evaluations
+			# - for computing rescaling factor
+			if len(saved_f) < max_saved_f:
+				saved_f.append(f)
+			else:
+				saved_f = saved_f[1:] + [f]
+
+			f  = float(np.asarray(f)) * rescale_factor
+			df = np.append(df, 0.0) * rescale_factor
+			dc = np.c_[ dc, np.zeros( la ) ]
+
+			if np.any([np.any(np.isnan(mat)) for mat in [x, f, c, df, dc]]):
+				mode = 10
+				break
 			
 		# Call SLSQP
 		scipy_slsqp(m, 0, x, xl, xu, f, c, df, dc, acc, majiter, mode, w, jw,
 		            alpha, f0, gs, h1, h2, h3, h4, t, t0, tol,
 		            iexact, incons, ireset, itermx, line, n1, n2, n3)
 
-		# If exit mode is not -1 or 1, slsqp has completed
+		# If exit mode is not -1 or 1, slsqp has typically completed
+		# HOWEVER: we do not necessarily want to terminate on mode 8
 		if abs(mode) != 1:
-			break
+			if mode == 8:
+				abs_non_zero_f = [np.abs(sf) for sf in saved_f if sf != 0]
+				if len( abs_non_zero_f ) == 0:
+					break
+				rescale_factor = 2. / np.mean(abs_non_zero_f)
+				f  *= rescale_factor
+				df *= rescale_factor
+			else:
+				break
 
 	x   = x.reshape( x0.shape )
+	f   = f / rescale_factor
+	df  = df[:-1] / rescale_factor
+	dc  = dc[:,:-1]
 	res = {'x':x, 'f':f, 'c':c, 'df':df, 'dc':dc}
 
 	status  = int(mode)
@@ -108,7 +132,8 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6, constraint_factor=1.)
 	            6: "Singular matrix C in LSQ subproblem",
 	            7: "Rank-deficient equality constraint subproblem HFTI",
 	            8: "Positive directional derivative for linesearch",
-	            9: "Iteration limit exceeded"}[ status ]
+	            9: "Iteration limit exceeded",
+	           10: "NaN detected"}[ status ]
 	res.update( {'success':success, 'status':status, 'message':message} )
 
 	return res
