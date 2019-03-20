@@ -25,51 +25,34 @@ SOFTWARE.
 import numpy as np 
 from numpy.random import multivariate_normal as mvn
 
-from ..utils import is_symmetric_matrix, is_pos_def
+from ..model import Model
+from ...utils import is_symmetric_matrix, is_pos_def
 
-class Model:
+class dtModel (Model):
 	def __init__ (self, candidate_model):
 		"""
 		Model:
-			x_{k+1} = f( x_k, u_k, p )  +  w_k,   w_k ~ N(0, Q)
+			x_{k+1} = f( x_k, u_k, p )  +  w_k,   w_k ~ N(0, x_covar)
 			    z_k = H * x_k
-			    y_k = z_k  +  v_k,                v_k ~ N(0, R)
+			    y_k = z_k  +  v_k,                v_k ~ N(0, y_covar)
 		with 
-			x_0 ~ N(x0, S_x0), u_k ~ N(u_k, S_u), p ~ N(p0, S_p)
+			x_0 ~ N(x0, x0_covar), 
+			u_k ~ N(u_k, u_covar), 
+			p   ~ N(p, p_covar)
 			u_k of dimension num_inputs
 		"""
-		self.name = candidate_model.name
-		if self.name is None:
-			self.name = 'Model' + np.random.randint(1000)
+		if candidate_model.num_meas is None:
+			candidate_model.num_meas = candidate_model.H.shape[0]
+		super().__init__(candidate_model)
 
-		self.f = candidate_model.f
 		self.H = candidate_model.H
-		self.Q = candidate_model.Q
-		self.R = candidate_model.R
 
-		self.num_inputs = candidate_model.num_inputs
-		assert isinstance(self.num_inputs, int) and self.num_inputs > 0
-		self.S_u = candidate_model.S_u
-
-		self.num_states = self.Q.shape[0]
+		self.x_covar    = candidate_model.x_covar
+		self.num_states = self.x_covar.shape[0]
 		assert self.num_states == self.H.shape[1]
 
-		self.num_meas = self.H.shape[0]
-		assert self.num_meas == self.R.shape[0]
-
-		self.x0   = candidate_model.x0
-		self.S_x0 = candidate_model.S_x0
-
-	"""
-	Transition function
-	"""
-	@property
-	def f (self):
-		return self._f 
-	@f.setter
-	def f (self, f):
-		assert callable(f)
-		self._f = f
+		self.x0       = candidate_model.x0
+		self.x0_covar = candidate_model.x0_covar
 
 	"""
 	Measurement matrix
@@ -87,37 +70,12 @@ class Model:
 	Process noise covariance matrix
 	"""
 	@property
-	def Q (self):
-		return self._Q
-	@Q.setter
-	def Q (self, Q):
-		assert is_symmetric_matrix(Q)
-		self._Q = Q.copy()
-
-	"""
-	Measurement noise covariance matrix
-	"""
-	@property
-	def R (self):
-		return self._R
-	@R.setter
-	def R (self, R):
-		assert is_symmetric_matrix(R)
-		self._R = R.copy()
-
-	"""
-	Control input covariance
-	"""
-	@property
-	def S_u (self):
-		return self._S_u
-	@S_u.setter
-	def S_u (self, S_u):
-		if S_u is None:
-			S_u = np.zeros(( self.num_inputs, self.num_inputs ))
-		assert is_symmetric_matrix(S_u)
-		assert S_u.shape == (self.num_inputs, self.num_inputs)
-		self._S_u = S_u.copy()
+	def x_covar (self):
+		return self._x_covar
+	@x_covar.setter
+	def x_covar (self, x_covar):
+		assert is_symmetric_matrix(x_covar)
+		self._x_covar = x_covar.copy()
 
 	"""
 	Initial state mean
@@ -134,14 +92,14 @@ class Model:
 	Initial state covariance
 	"""
 	@property
-	def S_x0 (self):
-		return self._S_x0 
-	@S_x0.setter
-	def S_x0 (self, S_x0):
-		if S_x0 is None:
-			S_x0 = np.zeros(( self.num_states, self.num_states ))
-		assert is_symmetric_matrix(S_x0)
-		self._S_x0 = S_x0.copy()
+	def x0_covar (self):
+		return self._x0_covar 
+	@x0_covar.setter
+	def x0_covar (self, x0_covar):
+		if x0_covar is None:
+			x0_covar = np.zeros(( self.num_states, self.num_states ))
+		assert is_symmetric_matrix(x0_covar)
+		self._x0_covar = x0_covar.copy()
 
 	"""
 	Latent state constraints
@@ -199,7 +157,7 @@ class Model:
 		If U.ndim == 1, one-step prediction
 		If U.ndim == 2, multi-step prediction
 		"""
-		x0 = x0 if not initial_uncertainty else mvn(x0, self.S_x0)
+		x0 = x0 if not initial_uncertainty else mvn(x0, self.x0_covar)
 
 		if U.ndim == 1:
 			return self._sample(x0, U)
@@ -214,10 +172,10 @@ class Model:
 		return X, Y
 
 	def _sample (self, x, u):
-		us = mvn(u, self.S_u)
+		us = mvn(u, self.u_covar)
 		xy = self.predict(x, us)
-		wk = mvn( np.zeros(self.num_states), self.Q )
-		vk = mvn( np.zeros(self.num_meas), self.R )
+		wk = mvn( np.zeros(self.num_states), self.x_covar )
+		vk = mvn( np.zeros(self.num_meas), self.y_covar )
 		return xy[0] + wk, xy[1] + vk
 
 	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False):
@@ -318,9 +276,9 @@ class Model:
 			Y, S = res
 
 		if x.ndim == 1:
-			S = S + self.R
+			S = S + self.y_covar
 		else:
-			S = S + self.R[None,:,:]
+			S = S + self.y_covar[None,:,:]
 
 		if grad:
 			return Y, S, dYdx, dYds, dSdx, dSds
@@ -351,20 +309,20 @@ class Model:
 
 	def _filter (self, yk, x, s):
 		sH = np.matmul(s, self.H.T)
-		K  = np.matmul(sH, np.linalg.inv(np.matmul(self.H, sH) + self.R))
+		K  = np.matmul(sH, np.linalg.inv(np.matmul(self.H, sH) + self.y_covar))
 		xk = x + np.matmul(K, yk - np.matmul(self.H, x))
 		sk = s - np.matmul(K, sH.T)
 		return xk, sk
 
-	def predict_filter (self, Y, x0, S_x0, U):
+	def predict_filter (self, Y, x0, x0_covar, U):
 		"""
 		Filter sequence, based on observations Y, controls U,
-		and with prediction p(x_1) ~ N(x0, S_x0)
+		and with prediction p(x_1) ~ N(x0, x0_covar)
 
-		Y    : [ n, E ]       ( y_1, ..., y_n )
-		x0   : [ D, ]
-		S_x0 : [ D, D ]
-		U    : [ n, D_U ]     ( u_1, ..., u_{n-1} )
+		Y        : [ n, E ]       ( y_1, ..., y_n )
+		x0       : [ D, ]
+		x0_covar : [ D, D ]
+		U        : [ n, D_U ]     ( u_1, ..., u_{n-1} )
 
 		Outputs
 		x  : [ n+1, D ]       ( x_1, ..., x_n )
@@ -373,7 +331,7 @@ class Model:
 		n = len(Y)
 		x = np.zeros(( n, self.num_states ))
 		s = np.zeros(( n, self.num_states, self.num_states ))
-		M, S = x0, S_x0
+		M, S = x0, x0_covar
 		for k in range( n ):
 			x[k], s[k] = self._filter(Y[k], M, S)
 			if k < n-1:

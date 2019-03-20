@@ -33,24 +33,24 @@ import warnings
 import logging
 logging.getLogger('GP').propagate = False
 
-from .model import Model
+from .model import dtModel
 
-from ..training import generate_training_data
-from ..transform import BoxTransform, MeanTransform
-from ..constraints import MeanStateConstraint
-from ..approximate_inference import gp_taylor_moment_match
+from ...training import generate_training_data
+from ...transform import BoxTransform, MeanTransform
+from ...constraints import MeanStateConstraint
+from ...approximate_inference import gp_taylor_moment_match
 
 default_noise_var = 1e-5
 
-class GPModel (Model):
+class dtGPModel (dtModel):
 	def __init__ (self, candidate_model, moment_match=gp_taylor_moment_match):
 		"""
 		We assume we do not have gradient information for f
 
 		if delta_transition:
-			f( x_k, u_k ) = x_k  +  g( x_k, u_k )
+		    f( x_k, u_k ) = x_k  +  g( x_k, u_k )
 		else
-			f( x_k, u_k ) = g( x_k, u_k )
+		    f( x_k, u_k ) = g( x_k, u_k )
 
 		We place a GP prior on the function g
 
@@ -61,8 +61,7 @@ class GPModel (Model):
 
 		self.gps = []
 
-		assert candidate_model.u_bounds is not None
-		self.u_bounds = candidate_model.u_bounds
+		assert self.u_bounds is not None
 
 		assert candidate_model.x_bounds is not None
 		self.x_bounds = candidate_model.x_bounds
@@ -189,11 +188,11 @@ class GPModel (Model):
 	"""
 	"""
 	def _training_data (self, T, Z):
-		if not self.transform:
-			return T, Z
-		self.z_transform = MeanTransform( Z )
-		self.t_transform = BoxTransform( T )
-		return self.t_transform(T), self.z_transform(Z)
+	    if not self.transform:
+	        return T, Z
+	    self.z_transform = MeanTransform( Z )
+	    self.t_transform = BoxTransform( T )
+	    return self.t_transform(T), self.z_transform(Z)
 	"""
 
 	"""
@@ -238,8 +237,10 @@ class GPModel (Model):
 		tnew = np.array( xk.tolist() + u.tolist() )
 		dim  = len( tnew )
 		Snew = np.zeros((dim, dim))
-		Snew[:self.num_states, :self.num_states] = Sk
-		Snew[self.num_states:, self.num_states:] = self.S_u
+		Dss  = np.cumsum([0] + [self.num_states, self.num_inputs]) #, self.num_param])
+		for i,Si in enumerate([Sk, self.u_covar]): #, self.p_covar]):
+			i1, i2 = Dss[i], Dss[i+1]
+			Snew[i1:i2, i1:i2] = Si
 		if self.transform:
 			tnew = self.t_transform(tnew)
 			Snew = self.t_transform.cov(Snew)
@@ -282,7 +283,7 @@ class GPModel (Model):
 			dVds = dVds[:self.num_states,:,:self.num_states,:self.num_states]
 
 		# Process noise variance
-		S += self.Q
+		S += self.x_covar
 		# Delta transition
 		if self.delta_transition:
 			M += xk

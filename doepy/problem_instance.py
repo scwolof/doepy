@@ -102,7 +102,7 @@ class ProblemInstance:
 		x, s, dxdU, dsdU = [], [], [], []
 		for model in self.models:
 			x.append( model.x0 )
-			s.append( model.S_x0 )
+			s.append( model.x0_covar )
 			dxdU.append( np.zeros(( N, model.num_states, D)) )
 			dsdU.append( np.zeros(( N, model.num_states, model.num_states, D)) )
 			model.initialise_x_constraints()
@@ -151,7 +151,7 @@ class ProblemInstance:
 			# Divergence between predictive distributions at time n
 			for i, model in enumerate( self.models ):
 				# Add measurement noise covariance
-				S[i] += model.R
+				S[i] += model.y_covar
 			ftmp, dDdY, dDdS = self.divergence(Z, S, grad=True)
 			f -= ftmp   ## Minimisation -> negative maximisation
 			for j in range( n+1 ):

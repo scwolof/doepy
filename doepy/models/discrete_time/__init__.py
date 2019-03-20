@@ -1,8 +1,7 @@
 
-from .model import Model
-from .linearmodel import LinearModel
-from .nonlinearmodel import NonLinearModel
-from .candidate_model_wrapper import CandidateWrapper
+from .model import dtModel
+from .linearmodel import dtLinearModel
+from .nonlinearmodel import dtNonLinearModel
 
 try:
 	import GPy
@@ -10,5 +9,5 @@ except:
 	import warnings
 	warnings.warn("Could not import GPy - cannot import GP models")
 else:
-	from .gpmodel import GPModel
-	from .sparsegpmodel import SparseGPModel
+	from .gpmodel import dtGPModel
+	from .sparsegpmodel import dtSparseGPModel

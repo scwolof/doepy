@@ -24,9 +24,9 @@ SOFTWARE.
 
 import numpy as np 
 
-from .model import Model
+from .model import dtModel
 
-class LinearModel (Model):
+class dtLinearModel (dtModel):
 	def __init__ (self, candidate_model):
 		"""
 		Model:
@@ -35,12 +35,12 @@ class LinearModel (Model):
 		assert candidate_model.F is not None
 		assert candidate_model.B is not None
 		F, B = candidate_model.F, candidate_model.B
-		candidate_model.f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
 
+		candidate_model.f = lambda x,u: np.matmul(F,x) + np.matmul(B,u)
 		super().__init__(candidate_model)
 
-		self.F  = F
-		self.B  = B
+		self.F = F
+		self.B = B
 
 	"""
 	Transition matrix
@@ -78,8 +78,8 @@ class LinearModel (Model):
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		M = np.matmul(self.F, xk) + np.matmul(self.B, u)
 		V = np.matmul(Sk, self.F.T)
-		S = np.matmul(self.Su, self.B.T)
-		S = np.matmul(self.F, V) + np.matmul(self.B, S) + self.Q
+		S = np.matmul(self.u_covar, self.B.T)
+		S = np.matmul(self.F, V) + np.matmul(self.B, S) + self.x_covar
 		if not grad:
 			return (M, S, V) if cross_cov else (M, S)
 		# Compute gradients

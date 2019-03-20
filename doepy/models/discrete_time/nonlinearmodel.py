@@ -24,27 +24,27 @@ SOFTWARE.
 
 import numpy as np 
 
-from .model import Model
-from ..approximate_inference import taylor_moment_match
+from .model import dtModel
+from ...approximate_inference import taylor_moment_match
 
-class NonLinearModel (Model):
+class dtNonLinearModel (dtModel):
 	def __init__ (self, candidate_model):
 		"""
 		Transition function f is differentiable:
-			g, dgdx, dgdu = f( x_k, u_k, grad=True )
-			x_k   [ E ]
-			u_k   [ D ]
-			g     [ E ]
-			dgdx  [ E x E ]
-			dgdu  [ E x D ]
+		    g, dgdx, dgdu = f( x_k, u_k, grad=True )
+		    x_k   [ E ]
+		    u_k   [ D ]
+		    g     [ E ]
+		    dgdx  [ E x E ]
+		    dgdu  [ E x D ]
 
-			if hessian: (STRONGLY RECOMMENDED)
-			g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu = f( x_k, u_k, grad=True )
-			ddgddx  [ E x E x E ]
-			ddgddu  [ E x D x D ]
-			ddgdxu  [ E x E x D ]
+		    if hessian: (STRONGLY RECOMMENDED)
+		    g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu = f( x_k, u_k, grad=True )
+		    ddgddx  [ E x E x E ]
+		    ddgddu  [ E x D x D ]
+		    ddgdxu  [ E x E x D ]
 
-			WARNING: NOT PROPERLY TESTED WITHOUT HESSIAN INFORMATION
+		    WARNING: NOT PROPERLY TESTED WITHOUT HESSIAN INFORMATION
 		"""
 		super().__init__(candidate_model)
 
@@ -69,18 +69,20 @@ class NonLinearModel (Model):
 		dMdm = np.concatenate((dfdx, dfdu), axis=1)
 		dim  = self.num_states + self.num_inputs
 		Snew = np.zeros((dim, dim))
-		Snew[:self.num_states, :self.num_states] = Sk
-		Snew[self.num_states:, self.num_states:] = self.S_u
+		Dss  = np.cumsum([0] + [self.num_states, self.num_inputs]) #, self.num_param])
+		for i,Si in enumerate([Sk, self.u_covar]): #, self.p_covar]):
+			i1, i2 = Dss[i], Dss[i+1]
+			Snew[i1:i2, i1:i2] = Si
 
 		if not grad:
 			S, V = taylor_moment_match(Snew, dMdm)
-			S   += self.Q
+			S   += self.x_covar
 			V    = V[:self.num_states]
 			return (M, S, V) if cross_cov else (M, S)
 
 		S,V,dMds,dSdm,dSds,dVdm,dVds = taylor_moment_match(Snew, dMdm, ddM, True)
 
-		S   += self.Q
+		S   += self.x_covar
 		V    = V[:self.num_states]
 		dMdx = dMdm[:,:self.num_states]
 		dMdu = dMdm[:,self.num_states:]

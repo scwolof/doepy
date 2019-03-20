@@ -25,11 +25,10 @@ SOFTWARE.
 import numpy as np 
 
 from GPy.models import SparseGPRegression
-from GPy.kern import RBF
 
-from .gpmodel import GPModel
+from .gpmodel import dtGPModel
 
-class SparseGPModel (GPModel):
+class dtSparseGPModel (dtGPModel):
 	def __init__ (self, *args, **kwargs):
 		"""
 		We place a _sparse_ GP prior on the function g
