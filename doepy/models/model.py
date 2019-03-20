@@ -31,10 +31,11 @@ class Model:
 	def __init__ (self, candidate_model):
 		"""
 		Model:
-			x_{k+1} = f( x_k, u_k )  +  w_k,   w_k ~ N(0, Q)
-			    y_k = H * x_k  +  v_k,         v_k ~ N(0, R)
+			x_{k+1} = f( x_k, u_k, p )  +  w_k,   w_k ~ N(0, Q)
+			    z_k = H * x_k
+			    y_k = z_k  +  v_k,                v_k ~ N(0, R)
 		with 
-			x_0 ~ N(x0, S_x0), u_k ~ N(u_k, S_u)
+			x_0 ~ N(x0, S_x0), u_k ~ N(u_k, S_u), p ~ N(p0, S_p)
 			u_k of dimension num_inputs
 		"""
 		self.name = candidate_model.name
@@ -143,7 +144,7 @@ class Model:
 		self._S_x0 = S_x0.copy()
 
 	"""
-	State constraints
+	Latent state constraints
 	- For surrogate models that want to enforce state constraints in order
 	  not to deviate too far from training data.
 	"""
@@ -257,6 +258,49 @@ class Model:
 		# Implemented in children classes (e.g. LinearModel)
 		raise NotImplementedError
 
+	def predict_z_dist (self, x, s, grad=False):
+		"""
+		Input: latent state mean x and covariance s
+			p( x_k | y_{1 : T} ) = N( x, s )
+		Output: observed state mean and variance of observation
+			p( z_k | y_{1 : T} ) = N( Z, S )
+
+		If x.ndim == 1, one-step prediction
+		If x.ndim == 2, multi-step prediction
+		"""
+		if x.ndim == 1:
+			return self._predict_z_dist(x, s, grad=grad)
+
+		n = len(x)
+		Z = np.zeros(( n, self.num_meas ))
+		S = np.zeros(( n, self.num_meas, self.num_meas ))
+		if not grad:
+			for k in range(n):
+				Z[k], S[k] = self._predict_z_dist(x[k], s[k], grad=grad)
+			return Z, S
+		dYdx = np.zeros(( n, self.num_meas, self.num_states ))
+		dYds = np.zeros(( n, self.num_meas, self.num_states, self.num_states ))
+		dSdx = np.zeros(( n, self.num_meas, self.num_meas, self.num_states ))
+		dSds = np.zeros( [n] + [self.num_meas]*2 + [self.num_states]*2 )
+		for k in range(n):
+			Z[k], S[k], dYdx[k], dYds[k], dSdx[k], dSds[k] \
+			                = self._predict_y_dist(x[k], s[k], grad=True)
+		return Z, S, dYdx, dYds, dSdx, dSds
+
+	def _predict_z_dist (self, x, s, grad=False):
+		Z = np.matmul(self.H, x)
+		S = np.matmul(self.H, np.matmul(s, self.H.T) )
+		if grad:
+			dYdm = self.H
+			dYds = np.zeros( [self.num_meas] + [self.num_states]*2 )
+			dSdx = np.zeros( [self.num_meas]*2 + [self.num_states] )
+			dSds = np.zeros( [self.num_meas]*2 + [self.num_states]*2 )
+			for e1 in range(  self.num_meas ):
+				for e2 in range(  self.num_meas ):
+					dSds[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
+			return Z, S, dYdm, dYds, dSdx, dSds
+		return Z, S
+
 	def predict_y_dist (self, x, s, grad=False):
 		"""
 		Input: latent state mean x and covariance s
@@ -267,37 +311,19 @@ class Model:
 		If x.ndim == 1, one-step prediction
 		If x.ndim == 2, multi-step prediction
 		"""
-		if x.ndim == 1:
-			return self._predict_y_dist(x, s, grad=grad)
-
-		n = len(x)
-		Y = np.zeros(( n, self.num_meas ))
-		S = np.zeros(( n, self.num_meas, self.num_meas ))
-		if not grad:
-			for k in range(n):
-				Y[k], S[k] = self._predict_y_dist(x[k], s[k], grad=grad)
-			return Y, S
-		dYdx = np.zeros(( n, self.num_meas, self.num_states ))
-		dYds = np.zeros(( n, self.num_meas, self.num_states, self.num_states ))
-		dSdx = np.zeros(( n, self.num_meas, self.num_meas, self.num_states ))
-		dSds = np.zeros( [n] + [self.num_meas]*2 + [self.num_states]*2 )
-		for k in range(n):
-			Y[k], S[k], dYdx[k], dYds[k], dSdx[k], dSds[k] \
-			                = self._predict_y_dist(x[k], s[k], grad=True)
-		return Y, S, dYdx, dYds, dSdx, dSds
-
-	def _predict_y_dist (self, x, s, grad=False):
-		Y = np.matmul(self.H, x)
-		S = np.matmul(self.H, np.matmul(s, self.H.T) ) + self.R
+		res = self.predict_z_dist(x, s, grad=grad)
 		if grad:
-			dYdm = self.H
-			dYds = np.zeros( [self.num_meas] + [self.num_states]*2 )
-			dSdx = np.zeros( [self.num_meas]*2 + [self.num_states] )
-			dSds = np.zeros( [self.num_meas]*2 + [self.num_states]*2 )
-			for e1 in range(  self.num_meas ):
-				for e2 in range(  self.num_meas ):
-					dSds[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
-			return Y, S, dYdm, dYds, dSdx, dSds
+			Y, S, dYdx, dYds, dSdx, dSds = res
+		else:
+			Y, S = res
+
+		if x.ndim == 1:
+			S = S + self.R
+		else:
+			S = S + self.R[None,:,:]
+
+		if grad:
+			return Y, S, dYdx, dYds, dSdx, dSds
 		return Y, S
 
 	def filter (self, yk, x, s):
