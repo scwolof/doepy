@@ -25,7 +25,9 @@ SOFTWARE.
 import numpy as np 
 
 class Model:
-	def __init__ (self, num_states):
+	def __init__ (self, name, num_states):
+		self.name = name
+
 		self.num_states = num_states
 		self.num_inputs = 2
 		self.num_meas   = 2
@@ -33,12 +35,12 @@ class Model:
 		self.H = np.zeros((self.num_meas, self.num_states))
 		self.H[0,0], self.H[1,2] = 1, 1
 
-		self.R  = 2.5e-3 * np.eye( self.num_meas )
-		self.Q  = 1e-4 * np.eye( self.num_states )
-		self.Su = 1e-5 * np.eye( self.num_inputs )
+		self.R   = 2.5e-3 * np.eye( self.num_meas )
+		self.Q   = 1e-4 * np.eye( self.num_states )
+		self.S_u = 1e-5 * np.eye( self.num_inputs )
 
-		self.x0 = np.zeros( self.num_states )
-		self.P0 = 1e-6 * np.eye( self.num_states )
+		self.x0   = np.zeros( self.num_states )
+		self.S_x0 = 1e-6 * np.eye( self.num_states )
 
 		self.hessian = True
 
@@ -56,22 +58,22 @@ class Model:
 	def get_candidate_dict (self):
 		return {'f':  self,
 		        'H':  self.H,
-		        'Q':  self.Q,
-		        'R':  self.R,
 		        'x0': self.x0,
-		        'S_u': self.Su,
-		        'S_x0': self.P0,
 		        'name': self.name,
-		        'hessian': True,
+		        'x_covar': self.Q,
+		        'y_covar': self.R,
+		        'u_covar': self.S_u,
+		        'x0_covar': self.S_x0,
+		        'hessian':  True,
 		        'x_bounds': self.x_bounds,
 		        'u_bounds': self.u_bounds,
+		        'num_meas': self.num_meas,
 		        'num_inputs': self.num_inputs}
 
 
 class M1 (Model):
 	def __init__ (self):
-		super().__init__(3)
-		self.name = 'M1'
+		super().__init__('M1', 3)
 		# State space feasibility
 		self.x_bounds[1] = self.x_bounds[2]
 
@@ -102,8 +104,7 @@ class M1 (Model):
 
 class M2 (Model):
 	def __init__ (self):
-		super().__init__(3)
-		self.name = 'M2'
+		super().__init__('M2', 3)
 		# State space feasibility
 		self.x_bounds[1] = self.x_bounds[2] + self.x_bounds[0] - self.u_bounds[0][::-1]
 
@@ -132,8 +133,7 @@ class M2 (Model):
 
 class M3 (Model):
 	def __init__ (self):
-		super().__init__(4)
-		self.name = 'M3'
+		super().__init__('M3', 4)
 		# State space feasibility
 		self.x_bounds[3] = self.x_bounds[0] - self.u_bounds[0][::-1]
 		self.x_bounds[1] = self.x_bounds[2] + self.x_bounds[3]
@@ -165,8 +165,7 @@ class M3 (Model):
 
 class M4 (Model):
 	def __init__ (self):
-		super().__init__(4)
-		self.name = 'M4'
+		super().__init__('M4', 4)
 		# State space feasibility
 		self.x_bounds[3] = self.x_bounds[0] - self.u_bounds[0][::-1]
 		tmp = self.x_bounds[0][:,None] * self.x_bounds[3][None,:]
