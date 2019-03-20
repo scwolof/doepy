@@ -44,7 +44,7 @@ class NonLinearModel (Model):
 			ddgddu  [ E x D x D ]
 			ddgdxu  [ E x E x D ]
 
-			WARNING: STABILITY NOT TESTED WITHOUT HESSIAN INFORMATION
+			WARNING: NOT PROPERLY TESTED WITHOUT HESSIAN INFORMATION
 		"""
 		super().__init__(candidate_model)
 
