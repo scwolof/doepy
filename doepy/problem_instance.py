@@ -26,7 +26,7 @@ import numpy as np
 
 class ProblemInstance:
 	def __init__ (self, models, num_steps, div_criterion, u_bounds,
-				  u_constraints=[], y_constraints=[]):
+				  u_constraints=[], z_constraints=[]):
 		self.models      = models
 		self.num_models  = len( models )
 		self.num_meas    = models[0].num_meas
@@ -43,16 +43,16 @@ class ProblemInstance:
 		self.u_constraints = u_constraints
 		if not isinstance(self.u_constraints, list):
 			self.u_constraints = [ self.u_constraints ]
-		self.y_constraints = y_constraints
-		if not isinstance(self.y_constraints, list):
-			self.y_constraints = [ self.y_constraints ]
+		self.z_constraints = z_constraints
+		if not isinstance(self.z_constraints, list):
+			self.z_constraints = [ self.z_constraints ]
 
 		# Compute the number of constraints
 		self.num_constraints = 0
 		for const in self.u_constraints:
 			# Control constraints
 			self.num_constraints += const.num_constraints( self.num_steps )
-		for const in self.y_constraints:
+		for const in self.z_constraints:
 			# Observed state constraints
 			self.num_constraints += self.num_steps * self.num_models \
 									* const.num_constraints()
@@ -106,22 +106,22 @@ class ProblemInstance:
 			dxdU.append( np.zeros(( N, model.num_states, D)) )
 			dsdU.append( np.zeros(( N, model.num_states, model.num_states, D)) )
 			model.initialise_x_constraints()
-		Y = np.zeros(( M, E ))
+		Z = np.zeros(( M, E ))
 		S = np.zeros(( M, E, E ))
-		dYdU = np.zeros(( M, E, N, D))
+		dZdU = np.zeros(( M, E, N, D))
 		dSdU = np.zeros(( M, E, E, N, D))
 
 		# Iterate over control sequence
 		for n, u in enumerate( U ):
-			dYdU.fill(0.)
+			dZdU.fill(0.)
 			dSdU.fill(0.)
 
 			# Predictive distributions at time n for model i
 			for i, model in enumerate( self.models ):
 				x[i], s[i], dxdx, dxds, dxdu, dsdx, dsds, dsdu \
 					= model.predict_x_dist(x[i], s[i], u, grad=True)
-				Y[i], S[i], dYdx, dYds, dSdx, dSds \
-					= model.predict_y_dist(x[i], s[i], grad=True)
+				Z[i], S[i], dZdx, dZds, dSdx, dSds \
+					= model.predict_z_dist(x[i], s[i], grad=True)
 				for j in range( n+1 ):
 					dxdU[i][j], dsdU[i][j] \
 					    = np.matmul( dxdx, dxdU[i][j] ) \
@@ -131,8 +131,8 @@ class ProblemInstance:
 					if j == n:
 						dxdU[i][j] += dxdu
 						dsdU[i][j] += dsdu
-					dYdU[i,:,j]   = np.matmul( dYdx, dxdU[i][j] ) \
-					            + np.einsum( 'ijk,jkn->in', dYds, dsdU[i][j] )
+					dZdU[i,:,j]   = np.matmul( dZdx, dxdU[i][j] ) \
+					            + np.einsum( 'ijk,jkn->in', dZds, dsdU[i][j] )
 					dSdU[i,:,:,j] = np.matmul( dSdx, dxdU[i][j] ) \
 					            + np.einsum( 'imjk,jkn->imn', dSds, dsdU[i][j] )
 
@@ -140,19 +140,22 @@ class ProblemInstance:
 				model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
 
 				# State constraint for model i at time n
-				for const in self.y_constraints:
-					c, dcdY, dcdS = const(Y[i], S[i], grad=True)
+				for const in self.z_constraints:
+					c, dcdZ, dcdS = const(Z[i], S[i], grad=True)
 					L = const.num_constraints()
 					C[ i_c: i_c+L ]    = c
-					dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdY,dYdU[i]) \
+					dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
 					                   + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
 					i_c += L
 
 			# Divergence between predictive distributions at time n
-			ftmp, dDdY, dDdS = self.divergence(Y, S, grad=True)
+			for i, model in enumerate( self.models ):
+				# Add measurement noise covariance
+				S[i] += model.R
+			ftmp, dDdY, dDdS = self.divergence(Z, S, grad=True)
 			f -= ftmp   ## Minimisation -> negative maximisation
 			for j in range( n+1 ):
-				dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dYdU[:,:,j] ) \
+				dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dZdU[:,:,j] ) \
 				         + np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
 
 		# latent state constraints
