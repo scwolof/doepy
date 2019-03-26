@@ -25,8 +25,15 @@ SOFTWARE.
 import numpy as np
 
 """
-Divergence between observed noise distribution of the filtered/smoothed
-posterior and the expected noise distribution.
+Divergence between N(y, S) and N(z, S)
+
+M - number of models
+N - number of test points
+E - number of target dimensions
+
+Y - observations
+Z - mean
+S - covariance
 """
 
 def KL_P0Pw (Y, Z, S):
@@ -71,6 +78,7 @@ def _normalise (Y, Z, S):
 	r"""
 	Compute normalised random variable
 		w_k \sim L_k^T ( z_k - y_k ) 
+		(L_k the Cholesky decomposition of S_k)
 	where
 		Y   [N x E ]		Observations y_k, k = 1,...,N
 		Z   [M x N x E]		Mean predictions z_k for all M models
