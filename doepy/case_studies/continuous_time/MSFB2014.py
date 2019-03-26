@@ -23,7 +23,6 @@ SOFTWARE.
 """
 
 import numpy as np 
-from scipy.integrate import odeint
 
 """
 A. Mesbah, S. Streif, R. Findeisen and R. D. Braatz (2014)
@@ -32,13 +31,15 @@ IFAC Proceedings (2014): 7079-7084
 """
 
 class Model:
-	def __init__ (self):
+	def __init__ (self, name):
 		"""
 		Inputs:
 		   x    States at time t:   x[i] - water level tank i (m)
 		   u    Controls at time t: u[i] - water inflow (m^3 / s)
 		   p    Model parameters
 		"""
+		self.name = name
+
 		self.num_states   = 3
 		self.num_controls = 2
 		self.num_measured = 1
@@ -60,16 +61,31 @@ class Model:
 		self.Sp = 5e-5    # Connecting pipe cross-section area (m^2)
 		self.g  = 9.81    # Gravity constant (m/s^2)
 
-	def _t_dx (self, x, u, p):
-		x1, x2, x3 = x
-		p1, p2, p3 = p[:3]
-		t1  = p1 * np.sign(x1-x3) * np.sqrt(2*self.g*np.abs(x1-x3))
-		t2  = p2 * np.sqrt(2*self.g*x2)
-		t3  = p3 * np.sign(x3-x2) * np.sqrt(2*self.g*np.abs(x3-x2))
-		dx1 = -t1 * self.Sp
-		dx2 = ( t3 - t2 ) * self.Sp
-		dx3 = ( t1 - t3 ) * self.Sp
-		return t1, t2, t3, dx1, dx2, dx3
+	def _t_dx (self, x, p, grad=False):
+		s2g = p[:3] * np.sqrt( 2 * self.g )
+		js1 = np.array([[1,0,-1],[0,1,0],[0,-1,1]])
+		xs  = np.matmul(js1, x)
+		tt  = s2g * np.sign( xs )
+		t   = tt * np.sqrt(np.abs( xs ))
+		js2 = np.array([[-1,0.,0.],[0.,-1,1],[1,0.,-1]])
+		dx  = self.Sp * np.matmul(js2, t)
+		if not grad:
+			return dx, t
+
+		dtdp = np.diag(t / p[:3])
+		dtdx = 0.5 * (s2g / np.sqrt(np.abs( xs )))[:,None] * js1
+		dxdx = self.Sp * np.matmul(js2, dtdx)
+		dxdp = self.Sp * np.matmul(js2, dtdp)
+
+		return dx, t, dxdx, dxdp, dtdx, dtdp
+
+	@property
+	def num_param (self):
+		return len( self.p0 )
+
+	@property
+	def S_p (self):
+		return 1e-4 * np.eye( self.num_param )
 
 
 class M1 (Model):
@@ -77,14 +93,19 @@ class M1 (Model):
 	Nominal scenario (no fault)
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		Model.__init__(self, 'M1')
 		self.p0 = np.array([ 1., 0.8, 1. ])
 		self.p_bounds  = np.array([[0.9, 1.1], [0.7, 0.9], [0.9, 1.1]])
-		self.num_param = len( self.p0 )
 
-	def __call__ (self, x, u, p):
-		t1, t2, t3, dx1, dx2, dx3 = self._t_dx(x, p)
-		return np.array([dx1 + u[0], dx2 + u[1], dx3]) / self.A
+	def __call__ (self, x, u, p, grad=False):
+		res = self._t_dx(x, p, grad=grad)
+		dx  = ( res[0] + np.array([ u[0], u[1], 0 ]) ) / self.A
+		if not grad:
+			return dx
+
+		dxdx, dxdp = [ r/self.A for r in res[2:4] ]
+		dxdu = np.array([[1.,0],[0,1.],[0,0]]) / self.A
+		return dx, dxdx, dxdu, dxdp
 
 
 class M2 (Model):
@@ -92,14 +113,20 @@ class M2 (Model):
 	Multiplicative actuator fault in inlet pump
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		Model.__init__(self, 'M2')
 		self.p0 = np.array([ 1., 0.8, 1., 0.6 ])
 		self.p_bounds  = np.array([[0.9, 1.1],[0.7, 0.9],[0.9, 1.1],[0.5,0.7]])
-		self.num_param = len( self.p0 )
 
-	def __call__ (self, x, u, p):
-		t1, t2, t3, dx1, dx2, dx3 = self._t_dx(x, p)
-		return np.array([dx1 + u[0]*p[3], dx2 + u[1], dx3]) / self.A
+	def __call__ (self, x, u, p, grad=False):
+		res = self._t_dx(x, p, grad=grad)
+		dx  = ( res[0] + np.array([ p[3]*u[0], u[1], 0 ]) ) / self.A
+		if not grad:
+			return dx
+
+		dxdx, dxdp = [ r/self.A for r in res[2:4] ]
+		dxdu  = np.array([[p[3],0],[0,1.],[0,0]]) / self.A
+		dxdp4 = np.array([u[0]/self.A,0,0])
+		return dx, dxdx, dxdu, np.c_[dxdp, dxdp4]
 
 
 class M3 (Model):
@@ -107,15 +134,23 @@ class M3 (Model):
 	Circular leak in tank
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		Model.__init__(self, 'M3')
 		self.p0 = np.array([ 1., 0.8, 1., 0.002 ])
 		self.p_bounds  = np.array([[0.9, 1.1],[0.7, 0.9],[0.9, 1.1],[0., 0.004]])
-		self.num_param = len( self.p0 )
 
-	def __call__ (self, x, u, p):
-		t1, t2, t3, dx1, dx2, dx3 = self._t_dx(x, p)
-		leak = t2 * np.pi * p[3]**2
-		return np.array([dx1 + u[0], dx2 - leak + u[1], dx3]) / self.A
+	def __call__ (self, x, u, p, grad=False):
+		res  = self._t_dx(x, p, grad=grad)
+		leak = res[1][1] * np.pi * p[3]**2
+		dx   = ( res[0] + np.array([ u[0], u[1] - leak, 0 ]) ) / self.A
+		if not grad:
+			return dx
+        
+		dxdx, dxdp, dtdx, dtdp = [ r/self.A for r in res[2:] ]
+		dxdx[1] -= dtdx[1] * np.pi * p[3]**2
+		dxdp[1] -= dtdp[1] * np.pi * p[3]**2
+		dxdu     = np.array([[1.,0],[0,1.],[0,0]]) / self.A
+		dxdp4    = np.array([0,-2*leak/p[3],0]) / self.A
+		return dx, dxdx, dxdu, np.c_[dxdp, dxdp4]
 
 
 class DataGen (M2):
