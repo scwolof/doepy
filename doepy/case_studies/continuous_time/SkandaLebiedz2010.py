@@ -23,7 +23,6 @@ SOFTWARE.
 """
 
 import numpy as np 
-from scipy.integrate import odeint
 
 """
 D. Skanda and D. Lebiedz (2010)
@@ -43,7 +42,7 @@ We modify this by introducing controls u1 and u2 that perturb the states.
 """
 
 class Model:
-	def __init__ (self):
+	def __init__ (self, name):
 		"""
 		Inputs:
 		   x    States at time t:
@@ -52,6 +51,8 @@ class Model:
 		   u    Controls at time t
 		   p    Model parameters
 		"""
+		self.name = name 
+
 		self.num_states   = 2
 		self.num_controls = 2
 		self.num_measured = 2
@@ -61,13 +62,21 @@ class Model:
 		self.R = np.eye(2)        # Measurement noise covariance
 
 		self.x0 = np.array([ 15., 2. ])
-		self.x0_bounds = np.array([[1e-7, 25],[1e-7, 25]])
 
-		self.T  = 72.0
-		self.dt = 0.75
-		self.num_steps = 97
+		self.T  = 300.0
+		self.dt = 10
+		self.num_steps = 31
 
 		self.u_bounds = np.array([[0., 0.2], [0., 0.2]])
+		self.x_bounds = np.array([[1e-7, 25],[1e-7, 25]])
+
+	@property
+	def num_param (self):
+		return len( self.p0 )
+
+	@property
+	def S_p (self):
+		return 1e-4 * np.eye( self.num_param )
 
 
 class M1 (Model):
@@ -75,20 +84,39 @@ class M1 (Model):
 	Allosteric model with positive feedback and linear product sink
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		super().__init__('M1')
 		self.p0 = np.array([ 0.879, 2.03, 0.109, 1.61e4 ])
 		self.p_bounds = np.array([[1e-7, 10],[1e-7,10],[1e-7,10],[1e3,1e5]])
-		self.num_param = len( self.p0 )
 
 	def __call__ (self, x, u, p):
 		x1, x2 = x
 		u1, u2 = u
-		p1, p2, p3, p4 = p 
+		p1, p2, p3, p4 = p
 
-		r   = ( x1 * (1+x1) * (1+x2)**2 ) / ( p4 + (1+x1)**2 * (1+x2)**2 )
+		r1  = x1 * (1+x1) * (1+x2)**2
+		r2  = p4 + (1+x1)**2 * (1+x2)**2
+		r   = r1 / r2
 		dx1 = 0.22 - p1 * r + u1
-		dx2 = (p2 * p1 * r) - (p3 * x2) + u2
-		return np.array([dx1, dx2])
+		dx2 = (p1 * p2 * r) - (p3 * x2) + u2
+		dx  = np.array([dx1, dx2])
+		if not grad:
+			return dx
+
+		dr1dx = np.array([ (1+2*x1)*(1+x2), 2*x1*(1+x1) ]) * (1+x2)
+		dr2dx = np.array([ 1+x2, 1+x1 ]) * 2 * (1+x1) * (1+x2)
+		drdx  = ( dr1dx*r2 - r1*dr2dx ) / r2**2
+		dx1dx = -p1 * drdx
+		dx2dx =  p1 * p2 * drdx - np.array([0,p3])
+		dxdx  = np.vstack((dx1dx, dx2dx))
+
+		dxdu  = np.eye(2)
+
+		drdp  = np.array([0,0,0, -r1/r2**2])
+		dx1dp = np.array([-r,0,0,0]) - p1 * drdp
+		dx2dp = np.array([p2*r,p1*r,-x2,0]) + p1 * p2 * drdp
+		dxdp  = np.vstack((dx1dp, dx2dp))
+
+		return dx, dxdx, dxdu, dxdp
 
 
 class M2 (Model):
@@ -97,20 +125,39 @@ class M2 (Model):
 	when the product sink is represented by Michaelis-Menten kinetics
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		super().__init__('M2')
 		self.p0 = np.array([ 6.47, 3.33, 5.11, 244 ])
 		self.p_bounds = np.array([[1e-7, 100],[1e-7,100],[1e-7,100],[100,300]])
-		self.num_param = len( self.p0 )
 
 	def __call__ (self, x, u, p):
 		x1, x2 = x
 		u1, u2 = u
 		p1, p2, p3, p4 = p 
 
-		r   = ( x1 * (1+x2) ) / ( p4 + (1+x1) * (1+x2) )
+		r1  = x1 * (1+x2)
+		r2  = p4 + (1+x1) * (1+x2)
+		r   = r1 / r2
 		dx1 = 0.22 - r + u1
 		dx2 = p1 * r - (p2 * x2) / (p3 + x2) + u2
-		return np.array([dx1, dx2])
+		dx  = np.array([dx1, dx2])
+		if not grad:
+			return dx
+
+		dr1dx = np.array([ 1+x2, x1 ])
+		dr2dx = np.array([ 1+x2, 1+x1 ])
+		drdx  = ( dr1dx*r2 - r1*dr2dx ) / r2**2
+		dx1dx = -drdx
+		dx2dx =  p1 * drdx + np.array([0, p2*(x2/(p3 + x2)**2 - 1./(p3 + x2))])
+		dxdx  = np.vstack((dx1dx, dx2dx))
+
+		dxdu  = np.eye(2)
+
+		drdp  = np.array([0,0,0, -r1/r2**2])
+		dx1dp = -drdp
+		dx2dp = p1*drdp + np.array([0,-x2,p2*x2/(p3 + x2),0])/ (p3 + x2)
+		dxdp  = np.vstack((dx1dp, dx2dp))
+
+		return dx, dxdx, dxdu, dxdp
 
 
 class DataGen (M1):
