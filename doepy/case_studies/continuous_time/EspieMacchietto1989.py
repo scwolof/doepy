@@ -22,8 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import numpy as np 
-from scipy.integrate import odeint
+import numpy as np
 
 """
 D. Espie and S. Macchietto (1989)
@@ -41,16 +40,20 @@ Ind Eng Chem Res 42: 1379-1390
 """
 
 class Model:
-	def __init__ (self):
+	def __init__ (self, name):
+		self.name = name
+
 		self.num_states   = 2
-		self.num_controls = 2
+		self.num_inputs   = 2
 		self.num_measured = 2
 
-		self.H = np.eye(2)        # Observation matrix
-		self.Q = np.zeros((2,2))  # Process noise covariance
-		self.R = 0.2 * np.eye(2)  # Measurement noise covariance
+		self.H = np.eye(2)           # Observation matrix
+		self.Q = np.zeros((2,2))     # Process noise covariance
+		self.R = 0.2**2 * np.eye(2)  # Measurement noise covariance
 
-		self.x0 = np.array([ 1.0, 0.01 ])
+		self.S_u  = 1e-6 * np.eye(self.num_inputs)
+		self.x0   = np.array([ 1.0, 0.01 ])
+		self.S_x0 = 1e-6 * np.eye(self.num_states)
 		self.x0_bounds = np.array([[1, 10], [0.01, 0.01]])
 
 		self.T  = 72.0
@@ -58,20 +61,29 @@ class Model:
 		self.num_steps = 97
 
 		self.u_bounds = np.array([[0.05, 0.2], [5., 35.]])
+		self.x_bounds = np.array([[0., 20.], [0., 30.]])
 
-	def __call__ (self, x, u, p):
-		"""
-		Inputs:
-		   x   States at time t
-		   u   Controls at time t
-		   p   Model parameters
-		Outputs:
-		   dx  States at time t+1
-		"""
-		f = lambda y,t: self._ode_func(y,u,p)
-		t = np.linspace(0, self.dt, 26)
-		X = odeint(f, x, t)
-		return X[-1]
+	@property
+	def num_param (self):
+		return len( self.p0 )
+
+	@property
+	def S_p (self):
+		return 1e-4 * np.eye(self.num_param)
+
+	def get_candidate_dict (self):
+		return {'f':  self,
+		        'H':  self.H,
+		        'Q':  self.Q,
+		        'R':  self.R,
+		        'x0': self.x0,
+		        'S_u':  self.S_u,
+		        'S_x0': self.S_x0,
+		        'name': self.name,
+		        'hessian':  False,
+		        'x_bounds': self.x_bounds,
+		        'u_bounds': self.u_bounds,
+		        'num_inputs': self.num_inputs}
 
 
 class M1 (Model):
@@ -79,11 +91,10 @@ class M1 (Model):
 	Monod kinetics with constant specific death rate
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		super().__init__('M1')
 		self.p0 = np.array([ 0.3, 0.25, 0.56, 0.02 ])
-		self.num_param = len( self.p0 )
 
-	def _ode_func (self, x, u, p):
+	def __call__ (self, x, u, p, grad=False):
 		x1, x2 = x
 		u1, u2 = u
 		p1, p2, p3, p4 = p 
@@ -91,7 +102,26 @@ class M1 (Model):
 		r   = p1*x2 / ( p2 + x2 )
 		dx1 = (r - p4 - u1) * x1
 		dx2 = -r*x1/p3 + u1*(u2 - x2)
-		return np.array([dx1, dx2])
+		dx  = np.array([dx1, dx2])
+		if not grad:
+			return dx
+
+		drdx = np.array([ 0., 1]) * r * (1/x2 - 1./(p2 + x2))
+		drdp = np.array([ r/p1, -r/(p2 + x2), 0., 0. ])
+
+		d1dx = np.array([r-p4-u1, 0]) + x1*drdx 
+		d2dx = np.array([-r/p3, -u1]) - x1*drdx/p3
+		dxdx = np.vstack(( d1dx, d2dx ))
+
+		d1du = np.array([-x1, 0.])
+		d2du = np.array([u2-x2, u1])
+		dxdu = np.vstack(( d1du, d2du ))
+
+		d1dp = x1 * ( drdp + np.array([0., 0., 0., -1.]) )
+		d2dp = ( np.array([0., 0., r/p3, 0.]) - drdp ) * x1/p3 
+		dxdp = np.vstack(( d1dp, d2dp ))
+
+		return dx, dxdx, dxdu, dxdp
 
 
 class M2 (Model):
@@ -99,19 +129,37 @@ class M2 (Model):
 	Contois kinetics with constant specific death rate
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		super().__init__('M2')
 		self.p0 = np.array([ 0.3, 0.03, 0.55, 0.03 ])
-		self.num_param = len( self.p0 )
 
-	def _ode_func (self, x, u, p):
+	def __call__ (self, x, u, p, grad=False):
 		x1, x2 = x
 		u1, u2 = u
 		p1, p2, p3, p4 = p 
 
 		r   = p1*x2 / ( p2*x1 + x2 )
-		dx1 = (r - p3 - u1) * x1
+		dx1 = (r - p4 - u1) * x1
 		dx2 = -r*x1/p3 + u1*(u2 - x2)
-		return np.array([dx1, dx2])
+		dx  = np.array([dx1, dx2])
+		if not grad:
+			return dx
+
+		drdx = r * np.array([ -p2/(p2*x1 + x2), 1/x2 - 1./(p2*x1 + x2) ])
+		drdp = np.array([ r/p1, -r*x1/(p2*x1 + x2), 0., 0. ])
+
+		d1dx = np.array([r-p4-u1, 0]) + x1*drdx 
+		d2dx = np.array([-r/p3, -u1]) - x1*drdx/p3
+		dxdx = np.vstack(( d1dx, d2dx ))
+
+		d1du = np.array([-x1, 0.])
+		d2du = np.array([u2-x2, u1])
+		dxdu = np.vstack(( d1du, d2du ))
+
+		d1dp = x1 * ( drdp + np.array([0., 0., 0., -1.]) )
+		d2dp = ( np.array([0., 0., r/p3, 0.]) - drdp ) * x1/p3 
+		dxdp = np.vstack(( d1dp, d2dp ))
+
+		return dx, dxdx, dxdu, dxdp
 
 
 class M3 (Model):
@@ -119,11 +167,10 @@ class M3 (Model):
 	Linear specific growth rate
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		super().__init__('M3')
 		self.p0 = np.array([ 0.12, 0.56, 0.03 ])
-		self.num_param = len( self.p0 )
 
-	def _ode_func (self, x, u, p):
+	def __call__ (self, x, u, p, grad=False):
 		x1, x2 = x
 		u1, u2 = u
 		p1, p2, p3 = p 
@@ -131,7 +178,26 @@ class M3 (Model):
 		r   = p1*x2 
 		dx1 = (r - p3 - u1) * x1
 		dx2 = -r*x1/p2 + u1*(u2 - x2)
-		return np.array([dx1, dx2])
+		dx  = np.array([dx1, dx2])
+		if not grad:
+			return dx
+
+		drdx = np.array([ 0, p1 ])
+		drdp = np.array([ x2, 0., 0. ])
+
+		d1dx = np.array([r-p3-u1, 0]) + x1*drdx 
+		d2dx = np.array([-r/p2, -u1]) - x1*drdx/p2
+		dxdx = np.vstack(( d1dx, d2dx ))
+
+		d1du = np.array([-x1, 0.])
+		d2du = np.array([u2-x2, u1])
+		dxdu = np.vstack(( d1du, d2du ))
+
+		d1dp = x1 * ( drdp - np.array([0., 0., 1]) )
+		d2dp = np.array([0., r*x1/p2**2, 0.]) - drdp*x1/p2
+		dxdp = np.vstack(( d1dp, d2dp ))
+
+		return dx, dxdx, dxdu, dxdp
 
 
 class M4 (Model):
@@ -139,25 +205,43 @@ class M4 (Model):
 	Monod kinetics with constant maintenance energy
 	"""
 	def __init__ (self):
-		Model.__init__(self)
+		super().__init__('M4')
 		self.p0 = np.array([ 0.3, 0.3, 0.55, 0.05 ])
-		self.num_param = len( self.p0 )
 
-	def _ode_func (self, x, u, p):
+	def __call__ (self, x, u, p, grad=False):
 		x1, x2 = x
 		u1, u2 = u
 		p1, p2, p3, p4 = p
 
 		r   = p1*x2 / (p2 + x2)
 		dx1 = (r - u1) * x1
-		dx2 = -(r/p2 + p4 )*x1 + u1*(u2 - x2)
-		return np.array([dx1, dx2])
+		dx2 = -(r/p3 + p4 )*x1 + u1*(u2 - x2)
+		dx  = np.array([dx1, dx2])
+		if not grad:
+			return dx
+
+		drdx = r * np.array([ 0, 1/x2 - 1./(p2 + x2) ])
+		drdp = np.array([ r/p1, -r/(p2 + x2), 0., 0. ])
+
+		d1dx = np.array([r-u1, 0]) + x1*drdx 
+		d2dx = np.array([-(r/p3+p4), -u1]) - x1*drdx/p3
+		dxdx = np.vstack(( d1dx, d2dx ))
+
+		d1du = np.array([-x1, 0.])
+		d2du = np.array([u2-x2, u1])
+		dxdu = np.vstack(( d1du, d2du ))
+
+		d1dp = x1 * drdp
+		d2dp = np.array([0., 0., r*x1/p3**2, -x1]) - drdp*x1/p3 
+		dxdp = np.vstack(( d1dp, d2dp ))
+
+		return dx, dxdx, dxdu, dxdp
 
 
 
 class DataGen (M1):
 	def __init__ (self):
-		M1.__init__(self)
+		super().__init__()
 		self.true_param = np.array([ 0.31, 0.18, 0.55, 0.03 ])
 
 	def __call__ (self, x, u):

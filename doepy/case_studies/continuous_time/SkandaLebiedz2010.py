@@ -44,6 +44,14 @@ We modify this by introducing controls u1 and u2 that perturb the states.
 
 class Model:
 	def __init__ (self):
+		"""
+		Inputs:
+		   x    States at time t:
+		        x[0] - substrate concentration
+		        x[1] - product concentration
+		   u    Controls at time t
+		   p    Model parameters
+		"""
 		self.num_states   = 2
 		self.num_controls = 2
 		self.num_measured = 2
@@ -55,27 +63,11 @@ class Model:
 		self.x0 = np.array([ 15., 2. ])
 		self.x0_bounds = np.array([[1e-7, 25],[1e-7, 25]])
 
-		#self.T  = 72.0
-		#self.dt = 0.75
-		#self.num_steps = 97
+		self.T  = 72.0
+		self.dt = 0.75
+		self.num_steps = 97
 
 		self.u_bounds = np.array([[0., 0.2], [0., 0.2]])
-
-	def __call__ (self, x, u, p):
-		"""
-		Inputs:
-		   x    States at time t:
-		        x[0] - substrate concentration
-		        x[1] - product concentration
-		   u    Controls at time t
-		   p    Model parameters
-		Outputs:
-		   dx   States at time t+1
-		"""
-		f = lambda y,t: self._ode_func(y,u,p)
-		t = np.linspace(0, 20, 21)
-		X = odeint(f, x, t)
-		return X[-1]
 
 
 class M1 (Model):
@@ -88,7 +80,7 @@ class M1 (Model):
 		self.p_bounds = np.array([[1e-7, 10],[1e-7,10],[1e-7,10],[1e3,1e5]])
 		self.num_param = len( self.p0 )
 
-	def _ode_func (self, x, u, p):
+	def __call__ (self, x, u, p):
 		x1, x2 = x
 		u1, u2 = u
 		p1, p2, p3, p4 = p 
@@ -110,7 +102,7 @@ class M2 (Model):
 		self.p_bounds = np.array([[1e-7, 100],[1e-7,100],[1e-7,100],[100,300]])
 		self.num_param = len( self.p0 )
 
-	def _ode_func (self, x, u, p):
+	def __call__ (self, x, u, p):
 		x1, x2 = x
 		u1, u2 = u
 		p1, p2, p3, p4 = p 
