@@ -54,6 +54,8 @@ class Model (EspieMacchietto1989.Model):
 	
 	def get_candidate_dict (self):
 		d = super().get_candidate_dict()
+		d['f'] = self
+		d['delta_transition'] = True
 		return d
 
 
