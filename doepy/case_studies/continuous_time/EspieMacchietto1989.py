@@ -74,15 +74,17 @@ class Model:
 	def get_candidate_dict (self):
 		return {'f':  self,
 		        'H':  self.H,
-		        'Q':  self.Q,
-		        'R':  self.R,
 		        'x0': self.x0,
-		        'S_u':  self.S_u,
-		        'S_x0': self.S_x0,
 		        'name': self.name,
+		        'x_covar':  self.Q,
+		        'u_covar':  self.S_u,
+		        'p_covar':  self.S_p,
+		        'y_covar':  self.R,
 		        'hessian':  False,
+		        'x0_covar': self.S_x0,
 		        'x_bounds': self.x_bounds,
 		        'u_bounds': self.u_bounds,
+		        'num_meas': self.num_meas,
 		        'num_inputs': self.num_inputs}
 
 
