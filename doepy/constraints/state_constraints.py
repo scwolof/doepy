@@ -26,12 +26,17 @@ import numpy as np
 
 class StateConstraint:
     def __init__ (self, bounds):
-        """
-        Input:
-        value  constraint bound
-        """
-        self.bounds     = np.asarray( bounds )
-        self.num_states = len( self.bounds ) 
+        self.bounds = np.asarray( bounds )
+
+        if self.bounds.ndim == 2:
+            # Constant bounds
+            assert self.bounds.shape[1] == 2
+            self.num_states = self.bounds.shape[0]
+        elif self.bounds.ndim == 3:
+            # Time-dependent bounds
+            assert self.bounds.shape[2] == 2
+            self.num_steps  = self.bounds.shape[0]
+            self.num_states = self.bounds.shape[1]
         
     @property
     def has_added_variables (self):
@@ -41,7 +46,7 @@ class StateConstraint:
         # Number of individual constraints constructed by class
         raise NotImplementedError 
         
-    def __call__ (self, M, S, grad=False):
+    def __call__ (self, M, S, step=None, grad=False):
         """
         Input:
         M   [ num_meas ]              Matrix of predictive means
@@ -56,14 +61,19 @@ class StateConstraint:
         raise NotImplementedError
         
 
-class MeanStateConstraint (StateConstraint):
+class ConstantMeanStateConstraint (StateConstraint):
+    r"""
+    Mean constraint:
+        bounds[i,0] <= \mu_i(t) <= bounds[i,1]
+    """
     def __init__ (self, bounds):
         super().__init__ (bounds)
+        assert self.bounds.ndim == 2
 
     def num_constraints (self):
         return 2 * self.num_states
         
-    def __call__ (self, M, S, grad=False):
+    def __call__ (self, M, S, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
@@ -72,6 +82,34 @@ class MeanStateConstraint (StateConstraint):
         for i in range(self.num_states):
             C[2*i]   = M[i] - self.bounds[i,0]
             C[2*i+1] = self.bounds[i,1] - M[i]
+            if grad:
+                dCdM[2*i,  i] = 1.
+                dCdM[2*i+1,i] = -1.
+        return C if not grad else (C, dCdM, dCdS)
+        
+
+class MovingMeanStateConstraint (StateConstraint):
+    r"""
+    Mean constraint:
+        bounds[t,i,0] <= \mu_i(t) <= bounds[t,i,1]
+    """
+    def __init__ (self, bounds):
+        super().__init__ (bounds)
+        assert self.bounds.ndim == 3
+
+    def num_constraints (self):
+        return 2 * self.num_states
+        
+    def __call__ (self, M, S, step, grad=False):
+        step = np.min(( self.num_steps-1, step ))
+        C    = np.zeros( 2 * self.num_states )
+        if grad:
+            dCdM = np.zeros( C.shape + M.shape )
+            dCdS = np.zeros( C.shape + S.shape )
+        
+        for i in range(self.num_states):
+            C[2*i]   = M[i] - self.bounds[step,i,0]
+            C[2*i+1] = self.bounds[step,i,1] - M[i]
             if grad:
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
