@@ -37,7 +37,7 @@ from .model import dtModel
 
 from ...training import generate_training_data
 from ...transform import BoxTransform, MeanTransform
-from ...constraints import MeanStateConstraint
+from ...constraints import ConstantMeanStateConstraint
 from ...approximate_inference import gp_taylor_moment_match
 
 default_noise_var = 1e-5
@@ -199,10 +199,10 @@ class dtGPModel (dtModel):
 	State constraints
 	"""
 	def initialise_x_constraints (self):
-		self.x_constraints = MeanStateConstraint(self.x_bounds)
+		self.x_constraints = ConstantMeanStateConstraint(self.x_bounds)
 		self.c, self.dcdU  = None, None
 
-	def update_x_constraints (self, x, s, dxdU, dsdU):
+	def update_x_constraints (self, x, s, dxdU, dsdU, step=None):
 		if self.x_constraints is None:
 			self.initialise_x_constraints()
 		c, dcdx, dcds = self.x_constraints(x, s, grad=True)

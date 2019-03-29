@@ -141,7 +141,7 @@ class ProblemInstance:
 
 				# State constraint for model i at time n
 				for const in self.z_constraints:
-					c, dcdZ, dcdS = const(Z[i], S[i], grad=True)
+					c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
 					L = const.num_constraints()
 					C[ i_c: i_c+L ]    = c
 					dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
