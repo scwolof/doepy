@@ -24,14 +24,32 @@ SOFTWARE.
 
 import numpy as np
 
-def is_symmetric_matrix (A):
-	return isinstance(A, np.ndarray) and A.ndim == 2 and np.array_equal(A, A.T)
+def assert_symmetric_matrix (A):
+    if not isinstance(A, np.ndarray):
+        raise ValueError('Input must be numpy.ndarray, not %s'%type(A))
+    if not A.ndim == 2:
+        raise AssertionError('Input must be 2D matrix, not %dD'%A.ndim)
+    if not np.array_equal(A, A.T):
+        raise AssertionError('Matrix not symmetrical')
 
-def is_pos_def (A):
-    if is_symmetric_matrix(A):
-        try:
-            np.linalg.cholesky(A)
-            return True
-        except np.linalg.LinAlgError:
-            return False
-    return False
+def assert_pos_def (A):
+    assert_symmetric_matrix(A)
+    try:
+        np.linalg.cholesky(A)
+    except np.linalg.LinAlgError:
+        raise AssertionError('Matrix not positive definite')
+
+def assert_is_shape (arr, shape):
+    if not isinstance(arr, np.ndarray):
+        raise ValueError('Input 1 must be numpy.ndarray, not %s'%type(arr))
+    if not isinstance(shape, (list,tuple)):
+        raise ValueError('Input 2 must be list or tuple, not %s'%type(shape))
+    if arr.shape != tuple(shape):
+        return AssertionError('Array shape mismatch: %s != %s'%(arr.shape, shape))
+
+def assert_equal_shape (array1, array2):
+    if not isinstance(array1, np.ndarray):
+        raise ValueError('Input must be numpy.ndarray, not %s'%type(array1))
+    if not isinstance(array2, np.ndarray):
+        raise ValueError('Input must be numpy.ndarray, not %s'%type(array2))
+    return assert_is_shape(array1, array2.shape)
