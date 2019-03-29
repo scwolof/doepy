@@ -47,7 +47,7 @@ class CandidateWrapper:
 		self.name = assign_variable('name', str)
 
 		# Dimensionality of observations
-		self.num_meas = assign_variable('num_inputs', int)
+		self.num_meas = assign_variable('num_meas', int)
 		# Measurement noise covariance matrix
 		self.y_covar  = assign_variable('y_covar', np.ndarray)
 
@@ -73,7 +73,7 @@ class CandidateWrapper:
 
 
 		########################
-		## Discrete-time models
+		## State-space models
 		########################
 		# Observation matrix
 		self.H = assign_variable('H', np.ndarray)
@@ -86,12 +86,16 @@ class CandidateWrapper:
 		# Initial state mean
 		self.x0       = assign_variable('x0', np.ndarray)
 		# Initial state covariance
-		self.x0_covar = assign_variable('S_x0', np.ndarray)
+		self.x0_covar = assign_variable('x0_covar', np.ndarray)
 
 		# Process noise covariance matrix
 		self.x_covar  = assign_variable('x_covar', np.ndarray)
 		# Bounds on latent states - for data-driven surrogate models
 		self.x_bounds = assign_variable('x_bounds', np.ndarray)
 
+
+		######################################
+		## Discrete-time state space models
+		######################################
 		# Delta transition: f(x,u,p) = x + f_delta(x,u,p)
 		self.delta_transition = assign_variable('delta_transition', bool)

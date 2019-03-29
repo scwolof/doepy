@@ -46,7 +46,7 @@ class dtModel (Model):
 		super().__init__(candidate_model)
 
 		self.H = candidate_model.H
-		self.num_states = self.H.shape[0]
+		self.num_states = self.H.shape[1]
 
 		# Process noise
 		self.x_covar = candidate_model.x_covar
@@ -136,6 +136,9 @@ class dtModel (Model):
 		If U.ndim == 1, one-step prediction
 		If U.ndim == 2, multi-step prediction
 		"""
+		if x0 is None:
+			x0 = self.x0
+
 		if U.ndim == 1:
 			return self._predict(x0, U)
 
@@ -149,8 +152,9 @@ class dtModel (Model):
 		return X, Y
 
 	def _predict (self, x, u):
-		xk1 = self.f(x, u)
-		yk  = np.matmul(self.H, x)
+		args = (x, u) if self.num_param <= 0 else (x, u, self.p_mean)
+		xk1  = self.f(*args)
+		yk   = np.matmul(self.H, x)
 		return xk1, yk
 
 	def sample (self, x0, U, initial_uncertainty=False):
@@ -162,6 +166,8 @@ class dtModel (Model):
 		If U.ndim == 1, one-step prediction
 		If U.ndim == 2, multi-step prediction
 		"""
+		if x0 is None:
+			x0 = self.x0
 		x0 = x0 if not initial_uncertainty else mvn(x0, self.x0_covar)
 
 		if U.ndim == 1:
