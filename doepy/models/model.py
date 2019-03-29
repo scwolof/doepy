@@ -24,7 +24,7 @@ SOFTWARE.
 
 import numpy as np 
 
-from ..utils import is_symmetric_matrix, is_pos_def
+from ..utils import assert_symmetric_matrix, assert_is_shape
 
 class Model:
 	def __init__ (self, candidate_model):
@@ -48,18 +48,22 @@ class Model:
 		assert isinstance(self.num_inputs, int) and self.num_inputs >  0
 		self.u_bounds   = candidate_model.u_bounds
 		self.u_covar    = candidate_model.u_covar
+		if self.u_covar is None:
+			self.u_covar = np.zeros(( self.num_inputs, self.num_inputs ))
 
 		# Model parameters p
 		self.num_param = candidate_model.num_param
 		if not self.num_param is None:
 			assert isinstance(self.num_param, int) and self.num_param >= 0
-			self.p_mean    = candidate_model.p_mean
-			self.p_covar   = candidate_model.p_covar
+			#self.p_mean  = candidate_model.p_mean
+			#self.p_covar = candidate_model.p_covar
 
 		# Observations y 
 		self.num_meas = candidate_model.num_meas
 		assert isinstance(self.num_meas, int) and self.num_meas > 0
 		self.y_covar  = candidate_model.y_covar
+		if self.y_covar is None:
+			self.y_covar = np.zeros(( self.num_meas, self.num_meas ))
 
 
 
@@ -82,8 +86,8 @@ class Model:
 		return self._y_covar
 	@y_covar.setter
 	def y_covar (self, y_covar):
-		assert is_symmetric_matrix(y_covar)
-		assert y_covar.shape == (self.num_meas, self.num_meas)
+		assert_is_shape(y_covar, (self.num_meas, self.num_meas))
+		assert_symmetric_matrix(y_covar)
 		self._y_covar = y_covar.copy()
 
 	"""
@@ -96,8 +100,8 @@ class Model:
 	def u_covar (self, u_covar):
 		if u_covar is None:
 			u_covar = np.zeros(( self.num_inputs, self.num_inputs ))
-		assert is_symmetric_matrix(u_covar)
-		assert u_covar.shape == (self.num_inputs, self.num_inputs)
+		assert_is_shape(u_covar, (self.num_inputs, self.num_inputs))
+		assert_symmetric_matrix(u_covar)
 		self._u_covar = u_covar.copy()
 
 	"""
@@ -108,8 +112,7 @@ class Model:
 		return self._p_mean
 	@p_mean.setter
 	def p_mean (self, p_mean):
-		assert is_instance(p_mean, np.ndarray)
-		assert p_mean.shape == (self.num_param,)
+		assert_is_shape(p_mean, (self.num_param,))
 		self._p_mean = p_mean.copy()
 
 	"""
@@ -122,8 +125,8 @@ class Model:
 	def p_covar (self, p_covar):
 		if p_covar is None:
 			p_covar = np.zeros(( self.num_param, self.num_param ))
-		assert is_symmetric_matrix(p_covar)
-		assert p_covar.shape == (self.num_param, self.num_param)
+		assert_is_shape(p_covar, (self.num_param, self.num_param))
+		assert_symmetric_matrix(p_covar)
 		self._p_covar = p_covar.copy()
 
 	"""

@@ -26,7 +26,7 @@ import numpy as np
 from numpy.random import multivariate_normal as mvn
 
 from ..model import Model
-from ...utils import is_symmetric_matrix, is_pos_def
+from ...utils import assert_symmetric_matrix, assert_is_shape
 
 class dtModel (Model):
 	def __init__ (self, candidate_model):
@@ -46,13 +46,18 @@ class dtModel (Model):
 		super().__init__(candidate_model)
 
 		self.H = candidate_model.H
+		self.num_states = self.H.shape[0]
 
-		self.x_covar    = candidate_model.x_covar
-		self.num_states = self.x_covar.shape[0]
-		assert self.num_states == self.H.shape[1]
+		# Process noise
+		self.x_covar = candidate_model.x_covar
+		if self.x_covar is None:
+			self.x_covar = np.zeros(( self.num_states, self.num_states ))
 
+		# Initial states
 		self.x0       = candidate_model.x0
 		self.x0_covar = candidate_model.x0_covar
+		if self.x0_covar is None:
+			self.x0_covar = np.zeros(( self.num_states, self.num_states ))
 
 	"""
 	Measurement matrix
@@ -74,7 +79,7 @@ class dtModel (Model):
 		return self._x_covar
 	@x_covar.setter
 	def x_covar (self, x_covar):
-		assert is_symmetric_matrix(x_covar)
+		assert_symmetric_matrix(x_covar)
 		self._x_covar = x_covar.copy()
 
 	"""
@@ -85,7 +90,7 @@ class dtModel (Model):
 		return self._x0 
 	@x0.setter
 	def x0 (self, x0):
-		assert x0.shape == (self.num_states,)
+		assert_is_shape(x0, (self.num_states,))
 		self._x0 = x0.copy()
 
 	"""
@@ -98,7 +103,7 @@ class dtModel (Model):
 	def x0_covar (self, x0_covar):
 		if x0_covar is None:
 			x0_covar = np.zeros(( self.num_states, self.num_states ))
-		assert is_symmetric_matrix(x0_covar)
+		assert_symmetric_matrix(x0_covar)
 		self._x0_covar = x0_covar.copy()
 
 	"""
@@ -109,7 +114,7 @@ class dtModel (Model):
 	def initialise_x_constraints (self):
 		pass
 
-	def update_x_constraints (self, x, s, dxdU, dsdU):
+	def update_x_constraints (self, x, s, dxdU, dsdU, step=None):
 		pass
 
 	def get_x_constraints (self):

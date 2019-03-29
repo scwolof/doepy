@@ -50,8 +50,7 @@ class dtLinearModel (dtModel):
 		return self._F
 	@F.setter
 	def F (self, F):
-		assert isinstance(F, np.ndarray)
-		assert F.shape == (self.num_states, self.num_states)
+		assert_is_shape(F, (self.num_states, self.num_states))
 		self._F  = F.copy()
 	@F.deleter
 	def F (self):
@@ -65,8 +64,7 @@ class dtLinearModel (dtModel):
 		return self._B
 	@B.setter
 	def B (self, B):
-		assert isinstance(B, np.ndarray)
-		assert B.shape[0] == self.num_states
+		assert_is_shape(B, (self.num_states, self.num_inputs))
 		self._B  = B.copy()
 	@B.deleter
 	def B (self):
