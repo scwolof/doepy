@@ -53,3 +53,7 @@ def assert_equal_shape (array1, array2):
     if not isinstance(array2, np.ndarray):
         raise ValueError('Input must be numpy.ndarray, not %s'%type(array2))
     return assert_is_shape(array1, array2.shape)
+
+def assert_not_none (variable, name='<variable_name>'):
+    if variable is None:
+        raise AssertionError('Variable %s is None'%name)
