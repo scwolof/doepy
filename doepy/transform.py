@@ -31,21 +31,25 @@ class Transform:
 	def __init__ (self, m, q):
 		self.m = m
 		self.q = q
+		self.qsafe0 = np.where(self.q != 0, 1, 0)
+		self.qsafe1 = np.where(self.q != 0, self.q, 1)
 
 	def __call__ (self, X, back=False):
 		if back:
 			return self.m + X * self.q
-		return (X - self.m) / self.q
+		return (X - self.m) / self.qsafe1 * self.qsafe0
 
 	def var (self, X, back=False):
 		if back:
 			return X * self.q**2
-		return X / self.q**2
+		return X / self.qsafe1**2 * self.qsafe0
 
 	def cov (self, X, back=False):
 		if back:
 			return X * (self.q[:,None] * self.q[None,:])
-		return X / (self.q[:,None] * self.q[None,:])
+		Q0 = (self.qsafe0[:,None] * self.qsafe0[None,:])
+		Q1 = (self.qsafe1[:,None] * self.qsafe1[None,:])
+		return X / Q1 * Q0
 
 	def prediction (self, M, S, back=False):
 		Mt = self(M, back=back)
