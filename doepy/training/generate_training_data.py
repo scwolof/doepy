@@ -45,8 +45,6 @@ def generate_training_data (f, x_bounds, u_bounds, p_bounds=None, active_dims=No
     return X, U, Y[0], Y[1]
 
 
-
-
 def generate_locations (bounds, active_dims, num_data_points_per_num_dim=None):
     """
     Generate training locations
@@ -68,7 +66,7 @@ def generate_locations (bounds, active_dims, num_data_points_per_num_dim=None):
         Dss = [0, bounds.shape[0]]
     Ns = num_data_points_per_num_dim
     if Ns is None:
-        Ns = [101, 21, 9, 5, 4, 3]
+        Ns = [101, 21, 10, 6, 4, 3]
 
     # Number of target dimensions
     E = len( active_dims )
@@ -92,7 +90,8 @@ def generate_locations (bounds, active_dims, num_data_points_per_num_dim=None):
         for n in range(N):
             T[n][i] = t[:,Dss[n]:Dss[n+1]]
     return T
-        
+
+
 def generate_observations (f, X, U, active_dims, p_bounds=None):
     """
     Combine (if possible) the training data sets X and U (where the active_dims)
@@ -137,9 +136,9 @@ def generate_observations (f, X, U, active_dims, p_bounds=None):
             Y = np.array([ f(x,u) for x,u in zip(Xt, Ut) ])
         else:
             # Sample parameter values
-            dp = p_bounds[:,1] - p_bounds[:,0]
-            P  = p_bounds[:,0] + dp * np.random.rand(Xt.shape[0],len(dp))
-            Y  = np.array([ f(x,u,p) for x,u,p in zip(Xt, Ut, P) ])
+            b1, b2 = p_bounds[:,0], p_bounds[:,1]
+            P = np.random.uniform( b1, b2, (Xt.shape[0],b1.shape[0]) )
+            Y = np.array([ f(x,u,p) for x,u,p in zip(Xt, Ut, P) ])
             
         for i in range( E ):
             if not combo[i] == e:
