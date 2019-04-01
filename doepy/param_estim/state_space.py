@@ -23,7 +23,9 @@ SOFTWARE.
 """
 
 import numpy as np 
-from scipy.optimize import least_squares, differential_evolution
+
+from scipy.optimize import least_squares as _least_squares
+from scipy.optimize import differential_evolution as _differential_evolution
 
 from .loss_func import Residual
 
@@ -45,19 +47,32 @@ class StateSpaceParamEstim:
 		return np.vstack( Z )
 
 
-def _differential_evolution (model, p0, p_bounds, X0, U, Y, y_covar):
-	loss = Residual(Y, y_covar, invert_W=True)
+def differential_evolution (model, p0, p_bounds, X0, U, Y, W, invert_W=True):
+	"""
+	W - typically measurement noise covariance
+	"""
+	loss = Residual(Y, W, invert_W=invert_W)
 	pred = StateSpaceParamEstim(model, X0, U)
 	
 	obj = lambda p: loss.sum_lsq_loss( pred(p) )
-	res = differential_evolution(obj, p_bounds)	
+	res = _differential_evolution(obj, p_bounds)
 	return res
 
 
-def _least_squares (model, p0, p_bounds, X0, U, Y, y_covar):
-	loss = Residual(Y, y_covar, invert_W=True)
+def least_squares (model, p0, p_bounds, X0, U, Y, W, invert_W=True):
+	"""
+	W - typically measurement noise covariance
+	"""
+	loss = Residual(Y, W, invert_W=invert_W)
 	pred = StateSpaceParamEstim(model, X0, U)
 	
 	obj = lambda p: loss.sqrt_lsq_loss( pred(p) )
-	res = least_squares(obj, p0, bounds=p_bounds.T.tolist())	
+	res = _least_squares(obj, p0, bounds=p_bounds.T.tolist())
 	return res
+
+
+def least_squares_grad (model, p0, p_bounds, X0, U, Y, W, invert_W=True):
+	"""
+	We have model gradients with respect to model parameters
+	"""
+	raise NotImplementedError('Not yet implemented')
