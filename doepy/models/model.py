@@ -114,6 +114,8 @@ class Model:
 		return self._p_mean
 	@p_mean.setter
 	def p_mean (self, p_mean):
+		if self.num_param is None:
+			self.num_param = p_mean.shape[0]
 		assert_is_shape(p_mean, (self.num_param,))
 		self._p_mean = p_mean.copy()
 
@@ -125,8 +127,10 @@ class Model:
 		return self._p_covar
 	@p_covar.setter
 	def p_covar (self, p_covar):
-		if p_covar is None:
-			p_covar = np.zeros(( self.num_param, self.num_param ))
+		if self.num_param is None:
+			self.num_param = p_covar.shape[0]
+		#if p_covar is None:
+		#	p_covar = np.zeros(( self.num_param, self.num_param ))
 		assert_is_shape(p_covar, (self.num_param, self.num_param))
 		assert_symmetric_matrix(p_covar)
 		self._p_covar = p_covar.copy()
