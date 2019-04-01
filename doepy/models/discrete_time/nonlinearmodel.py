@@ -82,16 +82,17 @@ class dtNonLinearModel (dtModel):
 
 		S,V,dMds,dSdm,dSds,dVdm,dVds = taylor_moment_match(Snew, dMdm, ddM, True)
 
+		dn   = self.num_states + self.num_inputs
 		S   += self.x_covar
 		V    = V[:self.num_states]
 		dMdx = dMdm[:,:self.num_states]
-		dMdu = dMdm[:,self.num_states:]
+		dMdu = dMdm[:,self.num_states:dn]
 		dMds = dMds[:,:self.num_states,:self.num_states]
 		dSdx = dSdm[:,:,:self.num_states]
-		dSdu = dSdm[:,:,self.num_states:]
+		dSdu = dSdm[:,:,self.num_states:dn]
 		dSds = dSds[:,:,:self.num_states,:self.num_states]
 		#dVdx = dVdm[:self.num_states,:,:self.num_states]
-		#dVdu = dVdm[:self.num_states,:,self.num_states:]
+		#dVdu = dVdm[:self.num_states,:,self.num_states:dn]
 		#dVds = dVds[:self.num_states,:,:self.num_states,:self.num_states]
 
 		if not cross_cov:
