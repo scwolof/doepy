@@ -106,7 +106,7 @@ def generate_observations (f, X, U, active_dims, p_bounds=None):
     Du = U[0].shape[1]
     Ns = [ x.shape[0] for x in X ]
     
-    combo = find_smallest_combo( active_dims, Ns )
+    combo = [i for i in range(len(X))] #find_smallest_combo( active_dims, Ns )
     
     Yt = [ None ] * E
     Pt = [ None ] * E
