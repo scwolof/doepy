@@ -26,6 +26,8 @@ import numpy as np
 
 from GPy.kern import RBF
 
+from . import DerivativeObject
+
 def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 	"""
 	Approximate inference with uncertain input x ~ N(mu, s2)
@@ -47,7 +49,7 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 	    M     [ E ]      mean E_{x,f}[ f(x) ]
 	    S     [ E x E ]  covariance V_{x,f}[ f(x) ]
 	    V     [ D x E ]  input-output covariance cov_{x,f}[ x, f(x) ]
-	    if grad:
+	    if grad, return DerivativeObject with:
 	    dMdm  [ E x D ]
 	    dMds  [ E x D x D ]
 	    dSdm  [ E x E x D ]
@@ -74,12 +76,7 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 	V = np.zeros( (D, E) )
 
 	if grad:
-		dMdm = np.zeros( (E, D) )       # output mean by input mean
-		dMds = np.zeros( (E, D, D) )    # output mean by input covariance
-		dSdm = np.zeros( (E, E, D) )    # output covariance by input mean
-		dSds = np.zeros( (E, E, D, D) ) # output covariance by input covar
-		dVdm = np.zeros( (D, E, D) )    # output covariance by input mean
-		dVds = np.zeros( (D, E, D, D) ) # output covariance by input covar
+		do = DerivativeObject(D, E)
 
 	lengthscales    = 100 * np.ones((E, D))
 	all_dims_active = True
@@ -118,21 +115,21 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 			dbqdm   = bq[:,None] * is2LX
 			dbqds   = 0.5 * bq[:,None,None]*is2LX[:,:,None]*is2LX[:,None,:]
 			dcds    = -0.5 * np.matmul( np.linalg.inv(s2LI).T, iL )
-			dMdm[e] = c * np.sum( dbqdm, axis=0 )
-			dMds[e] = c * ( np.sum( dbqds, axis=0 ) + dcds * sumbq )
+			do.dMdm[e] = c * np.sum( dbqdm, axis=0 )
+			do.dMds[e] = c * ( np.sum( dbqds, axis=0 ) + dcds * sumbq )
 
 		is2LXs2 = np.matmul(is2LX, s2.T)
 		V[:,e]  = c * np.sum( bq[:,None] * is2LXs2, axis=0 )
 		if grad:
-			dVdm[:,e] = 2 * np.matmul(s2, dMds[e])
-			dVds[:,e] =  dcds * V[:,e,None,None]
+			do.dVdm[:,e] = 2 * np.matmul(s2, do.dMds[e])
+			do.dVds[:,e] =  dcds * V[:,e,None,None]
 			s2is2L = np.matmul(s2, is2L)
 			for d1 in range(D):
 				dis2LXs2ds = - is2LX[:,None,d1,None] * s2is2L[None,:]
 				dis2LXs2ds[:,d1] += is2LX
 				dsumbqSSds = np.sum( dbqds[:,None,d1] * is2LXs2[:,:,None] \
 								+ bq[:,None,None] * dis2LXs2ds, axis=0 )
-				dVds[:,e,d1] += c * dsumbqSSds
+				do.dVds[:,e,d1] += c * dsumbqSSds
 			
 		logk.append( np.log(rho2) - 0.5 * np.sum( (inp/leng)**2, axis=1 ) )
 		
@@ -197,11 +194,11 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 								+ np.sum(np.matmul(B, zj[:,:d+1]), axis=0)
 					T[:d+1, d] = T[d,:d+1]
 				
-				r -= M[i]*dMdm[j] + M[j]*dMdm[i] 
-				dSdm[i,j], dSdm[j,i] = r.copy(), r.copy()
+				r -= M[i]*do.dMdm[j] + M[j]*do.dMdm[i] 
+				do.dSdm[i,j], do.dSdm[j,i] = r.copy(), r.copy()
 				T  = 0.5 * (isdR * T - S[i,j] * iR*(lengi + lengj)[:,None])
-				T -= M[i]*dMds[j] + M[j]*dMds[i] 
-				dSds[i,j], dSds[j,i] = T.copy(), T.copy()
+				T -= M[i]*do.dMds[j] + M[j]*do.dMds[i] 
+				do.dSds[i,j], do.dSds[j,i] = T.copy(), T.copy()
 
 			if independent:
 				break
@@ -211,5 +208,5 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 	S -= M[:,None] * M[None,:]
 
 	if grad:
-		return M, S, V, dMdm, dMds, dSdm, dSds, dVdm, dVds
+		return M, S, V, do
 	return M, S, V
