@@ -25,6 +25,8 @@ SOFTWARE.
 import numpy as np 
 from numpy.random import multivariate_normal as mvn
 
+from . import LatentStateDerivativeObject, MeasDerivativeObject
+
 from ..model import Model
 from ...utils import assert_symmetric_matrix, assert_is_shape
 
@@ -212,16 +214,12 @@ class dtModel (Model):
 			for k in range(n):
 				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
 			return X, S
-		dXdx = np.zeros(( n, self.num_states, self.num_states ))
-		dXds = np.zeros(( n, self.num_states, self.num_states, self.num_states ))
-		dXdu = np.zeros(( n, self.num_states, self.num_inputs ))
-		dSdx = np.zeros(( n, self.num_states, self.num_states, self.num_states ))
-		dSds = np.zeros([ n ] + [ self.num_states ] * 4 )
-		dSdu = np.zeros(( n, self.num_states, self.num_states, self.num_inputs ))
+
+		do = LatentStateDerivativeObject(self, n=n)
 		for k in range(n):
-			X[k], S[k], dXdx[k], dXds[k], dXdu[k], dSdx[k], dSds[k], dSdu[k] \
-			                = self._predict_x_dist(X[k], S[k], U[k], grad=True)
-		return X, S, dXdx, dXds, dXdu, dSdx, dSds, dSdu
+			X[k], S[k], dok = self._predict_x_dist(X[k], S[k], U[k], grad=True)
+			do.insert(dok,k)
+		return X, S, do
 
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		# Implemented in children classes (e.g. LinearModel)
@@ -247,28 +245,25 @@ class dtModel (Model):
 			for k in range(n):
 				Z[k], S[k] = self._predict_z_dist(x[k], s[k], grad=grad)
 			return Z, S
-		dYdx = np.zeros(( n, self.num_meas, self.num_states ))
-		dYds = np.zeros(( n, self.num_meas, self.num_states, self.num_states ))
-		dSdx = np.zeros(( n, self.num_meas, self.num_meas, self.num_states ))
-		dSds = np.zeros( [n] + [self.num_meas]*2 + [self.num_states]*2 )
+
+		do = MeasDerivativeObject(self, n=n)
 		for k in range(n):
-			Z[k], S[k], dYdx[k], dYds[k], dSdx[k], dSds[k] \
-			                = self._predict_y_dist(x[k], s[k], grad=True)
-		return Z, S, dYdx, dYds, dSdx, dSds
+			Z[k], S[k], dok = self._predict_y_dist(x[k], s[k], grad=True)
+			do.insert(dok,k)
+		return Z, S, do
 
 	def _predict_z_dist (self, x, s, grad=False):
-		Z = np.matmul(self.H, x)
-		S = np.matmul(self.H, np.matmul(s, self.H.T) )
+		Z   = np.matmul(self.H, x)
+		S   = np.matmul(self.H, np.matmul(s, self.H.T) )
+		ret = (Z, S)
 		if grad:
-			dYdm = self.H
-			dYds = np.zeros( [self.num_meas] + [self.num_states]*2 )
-			dSdx = np.zeros( [self.num_meas]*2 + [self.num_states] )
-			dSds = np.zeros( [self.num_meas]*2 + [self.num_states]*2 )
+			do = MeasDerivativeObject(self)
+			do.dMdx = self.H
 			for e1 in range(  self.num_meas ):
 				for e2 in range(  self.num_meas ):
-					dSds[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
-			return Z, S, dYdm, dYds, dSdx, dSds
-		return Z, S
+					do.dSds[e1,e2] = self.H[e1][:,None] * self.H[e2][None,:]
+			ret += (do,)
+		return ret
 
 	def predict_y_dist (self, x, s, grad=False):
 		"""
@@ -282,17 +277,15 @@ class dtModel (Model):
 		"""
 		res = self.predict_z_dist(x, s, grad=grad)
 		if grad:
-			Y, S, dYdx, dYds, dSdx, dSds = res
+			Y, S, do = res
 		else:
 			Y, S = res
 
-		if x.ndim == 1:
-			S = S + self.y_covar
-		else:
-			S = S + self.y_covar[None,:,:]
+		R  = self.y_covar if x.ndim == 1 else self.y_covar[None,:,:]
+		S += R
 
 		if grad:
-			return Y, S, dYdx, dYds, dSdx, dSds
+			return Y, S, do
 		return Y, S
 
 	def filter (self, yk, x, s):

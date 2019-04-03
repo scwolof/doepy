@@ -33,6 +33,7 @@ import warnings
 import logging
 logging.getLogger('GP').propagate = False
 
+from . import LatentStateDerivativeObject
 from .model import dtModel
 
 from ...utils import assert_not_none
@@ -65,21 +66,16 @@ class dtGPModel (dtModel):
 		assert_not_none(self.u_bounds,'u_bounds')
 
 		assert_not_none(candidate_model.x_bounds,'candidate:x_bounds')
-		self.x_bounds = candidate_model.x_bounds
+		self.x_bounds     = candidate_model.x_bounds
 		self.x_constraint = None
 
-		if candidate_model.transform is None:
-			self.transform = False
-		else:
-			self.transform = candidate_model.transform
-		if self.transform:
-			self.z_transform = None
-			self.t_transform = None
+		self.transform   = True if candidate_model.transform is None\
+                                else candidate_model.transform
+		self.z_transform = None
+		self.t_transform = None
 
-		if candidate_model.delta_transition is None:
-			self.delta_transition = False
-		else:
-			self.delta_transition = candidate_model.delta_transition
+		self.delta_transition = False if candidate_model.delta_transition is None\
+                                      else candidate_model.delta_transition
 
 		self.moment_match = moment_match
 
@@ -123,7 +119,7 @@ class dtGPModel (dtModel):
 
 		# Model parameters
 		if self.num_param is not None and self.num_param > 0:
-			assert 'p_bounds' in kwargs
+			assert 'p_bounds' in kwargs, 'Training requires parameter bounds'
 			dic['p_bounds'] = kwargs.get('p_bounds')
 		# Number of training data points
 		nom = 'num_data_points_per_num_dim_combo'
@@ -140,14 +136,14 @@ class dtGPModel (dtModel):
 		# Training inputs
 		T = [ np.concatenate(t, axis=1) for t in zip(*T[:-1]) ]
 
-		if self.transform:
-			T = self.set_up_input_transforms(T)
-			Z = self.set_up_target_transforms(Z)
-
 		self._train(T, Z, active_dims, noise_var, hyp=hyp, **kwargs)
 
 	def _train (self, T, Z, active_dims, noise_var=default_noise_var,
 	            hyp=None, **kwargs):
+		if self.transform:
+			T = self.set_up_input_transforms(T)
+			Z = self.set_up_target_transforms(Z)
+
 		if hyp is None:
 			hyp = [None] * len(T)
 		for t, z, ad, h in zip(T, Z, active_dims, hyp):
@@ -258,9 +254,9 @@ class dtGPModel (dtModel):
 			Ss   += [ self.p_covar ]
 
 		# Input variance
-		dim  = len( tnew )
-		S_t  = np.zeros(( dim, dim ))
-		Dss  = np.cumsum( [0] + nums )
+		dim = len( tnew )
+		S_t = np.zeros(( dim, dim ))
+		Dss = np.cumsum( [0] + nums )
 		for i,Si in enumerate( Ss ):  # Fill block-diagonal matrix
 			i1, i2 = Dss[i], Dss[i+1]
 			S_t[i1:i2, i1:i2] = Si
@@ -272,7 +268,8 @@ class dtGPModel (dtModel):
 		# Moment matching
 		res = self.moment_match(self.gps, tnew, S_t, grad=grad)
 		if grad:
-			M, S, V, dMdt, dMds, dSdt, dSds, dVdt, dVds = res
+			M, S, V, domm = res
+			do = LatentStateDerivativeObject(self)
 		else:
 			M, S, V = res
 				
@@ -286,26 +283,32 @@ class dtGPModel (dtModel):
 			if grad:
 				qtqt  = qt[:,None] * qt[None,:]
 				qzqz  = qz[:,None] * qz[None,:]
-				dMdt *= qz[:,None] / qt[None,:]
-				dMds *= qz[:,None,None] / qtqt[None,:,:]
-				dSdt *= qzqz[:,:,None] / qt[None,None,:]
-				dSds *= qzqz[:,:,None,None] / qtqt[None,None,:,:]
-				dVdt *= qtqz[:,:,None] / qt[None,None,:]
-				dVds *= qtqz[:,:,None,None] / qtqt[None,None,:,:]
+				domm.dMdm *= qz[:,None] / qt[None,:]
+				domm.dMds *= qz[:,None,None] / qtqt[None,:,:]
+				domm.dSdm *= qzqz[:,:,None] / qt[None,None,:]
+				domm.dSds *= qzqz[:,:,None,None] / qtqt[None,None,:,:]
+				domm.dVdm *= qtqz[:,:,None] / qt[None,None,:]
+				domm.dVds *= qtqz[:,:,None,None] / qtqt[None,None,:,:]
 
 		# Separate state and control dimensions again
 		V = V[:self.num_states]
 		if grad:
-			dn   = self.num_states + self.num_inputs
-			dMdx = dMdt[:,:self.num_states]
-			dMdu = dMdt[:,self.num_states:dn]
-			dMds = dMds[:,:self.num_states,:self.num_states]
-			dSdx = dSdt[:,:,:self.num_states]
-			dSdu = dSdt[:,:,self.num_states:dn]
-			dSds = dSds[:,:,:self.num_states,:self.num_states]
-			dVdx = dVdt[:self.num_states,:,:self.num_states]
-			dVdu = dVdt[:self.num_states,:,self.num_states:dn]
-			dVds = dVds[:self.num_states,:,:self.num_states,:self.num_states]
+			D  = self.num_states
+			dn = self.num_states + self.num_inputs
+			do.dMdx = domm.dMdm[:,:D]
+			do.dMdu = domm.dMdm[:,D:dn]
+			do.dMds = domm.dMds[:,:D,:D]
+			do.dSdx = domm.dSdm[:,:,:D]
+			do.dSdu = domm.dSdm[:,:,D:dn]
+			do.dSds = domm.dSds[:,:,:D,:D]
+			do.dVdx = domm.dVdm[:D,:,:D]
+			do.dVdu = domm.dVdm[:D,:,D:dn]
+			do.dVds = domm.dVds[:D,:,:D,:D]
+			if self.num_param is not None and self.num_param > 0:
+				P = self.num_param
+				do.dMdp = domm.dMdm[:,-P:]
+				do.dSdp = domm.dSdm[:,:,-P:]
+				do.dVdp = domm.dVdm[:,:,-P:]
 
 		# Process noise variance
 		S += self.x_covar
@@ -315,16 +318,15 @@ class dtGPModel (dtModel):
 			S += Sk + V + V.T
 			V += Sk
 			if grad:
-				dMdx += np.eye(self.num_states)
-				dSdx += dVdx + np.swapaxes(dVdx,0,1)
-				dSds += dVds + np.swapaxes(dVds,0,1)
+				do.dMdx += np.eye(self.num_states)
+				do.dSdx += do.dVdx + np.swapaxes(do.dVdx,0,1)
+				do.dSds += do.dVds + np.swapaxes(do.dVds,0,1)
 				for d1 in range(self.num_states):
 					for d2 in range(self.num_states):
-						dSds[d1,d2,d1,d2] += 1
-						dVds[d1,d2,d1,d2] += 1
-		# Returns
-		if not grad:
-			return (M, S, V) if cross_cov else (M, S)
-		if not cross_cov:
-			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
-		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu
+						do.dSds[d1,d2,d1,d2] += 1
+						do.dVds[d1,d2,d1,d2] += 1
+
+		ret = (M, S, V) if cross_cov else (M, S)
+		if grad:
+			ret += (do,)
+		return ret

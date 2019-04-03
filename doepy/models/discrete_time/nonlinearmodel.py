@@ -24,6 +24,8 @@ SOFTWARE.
 
 import numpy as np 
 
+from . import LatentStateDerivativeObject
+
 from .model import dtModel
 from ...approximate_inference import taylor_moment_match
 
@@ -74,27 +76,33 @@ class dtNonLinearModel (dtModel):
 			i1, i2 = Dss[i], Dss[i+1]
 			Snew[i1:i2, i1:i2] = Si
 
-		if not grad:
+		if grad:
+			S, V, domm = taylor_moment_match(Snew, dMdm, ddM, True)
+		else:
 			S, V = taylor_moment_match(Snew, dMdm)
-			S   += self.x_covar
-			V    = V[:self.num_states]
-			return (M, S, V) if cross_cov else (M, S)
 
-		S,V,dMds,dSdm,dSds,dVdm,dVds = taylor_moment_match(Snew, dMdm, ddM, True)
+		S  += self.x_covar
+		V   = V[:self.num_states]
+		ret = (M, S, V) if cross_cov else (M, S)
 
-		dn   = self.num_states + self.num_inputs
-		S   += self.x_covar
-		V    = V[:self.num_states]
-		dMdx = dMdm[:,:self.num_states]
-		dMdu = dMdm[:,self.num_states:dn]
-		dMds = dMds[:,:self.num_states,:self.num_states]
-		dSdx = dSdm[:,:,:self.num_states]
-		dSdu = dSdm[:,:,self.num_states:dn]
-		dSds = dSds[:,:,:self.num_states,:self.num_states]
-		#dVdx = dVdm[:self.num_states,:,:self.num_states]
-		#dVdu = dVdm[:self.num_states,:,self.num_states:dn]
-		#dVds = dVds[:self.num_states,:,:self.num_states,:self.num_states]
-
-		if not cross_cov:
-			return M, S, dMdx, dMds, dMdu, dSdx, dSds, dSdu
-		return M, S, V, dMdx, dMds, dMdu, dSdx, dSds, dSdu
+		if grad:
+			do = LatentStateDerivativeObject(self)
+			D  = self.num_states
+			dn = D + self.num_inputs
+			do.dMdx = domm.dMdm[:,:D]
+			do.dMdu = domm.dMdm[:,D:dn]
+			do.dMds = domm.dMds[:,:D,:D]
+			do.dSdx = domm.dSdm[:,:,:D]
+			do.dSdu = domm.dSdm[:,:,D:dn]
+			do.dSds = domm.dSds[:,:,:D,:D]
+			do.dVdx = domm.dVdm[:D,:,:D]
+			do.dVdu = domm.dVdm[:D,:,D:dn]
+			do.dVds = domm.dVds[:D,:,:D,:D]
+			if self.num_param is not None and self.num_param > 0:
+				P = self.num_param
+				do.dMdp = domm.dMdm[:,-P:]
+				do.dSdp = domm.dSdm[:,:,-P:]
+				do.dVdp = domm.dVdm[:,:,-P:]
+			ret += (do,)
+ 
+		return ret

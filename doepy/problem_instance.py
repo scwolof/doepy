@@ -111,6 +111,14 @@ class ProblemInstance:
 		dZdU = np.zeros(( M, E, N, D))
 		dSdU = np.zeros(( M, E, E, N, D))
 
+		def gradchain (do, dxdU, dsdU, i, j):
+			dMdu = np.matmul( do.dMdx, dxdU[i][j] ) \
+			            + np.einsum( 'ijk,jkn->in', do.dMds, dsdU[i][j] )
+			dSdU = np.matmul( do.dSdx, dxdU[i][j] ) \
+			            + np.einsum( 'imjk,jkn->imn', do.dSds, dsdU[i][j] )
+			return dMdU, dSdU
+			       
+
 		# Iterate over control sequence
 		for n, u in enumerate( U ):
 			dZdU.fill(0.)
@@ -118,23 +126,14 @@ class ProblemInstance:
 
 			# Predictive distributions at time n for model i
 			for i, model in enumerate( self.models ):
-				x[i], s[i], dxdx, dxds, dxdu, dsdx, dsds, dsdu \
-					= model.predict_x_dist(x[i], s[i], u, grad=True)
-				Z[i], S[i], dZdx, dZds, dSdx, dSds \
-					= model.predict_z_dist(x[i], s[i], grad=True)
+				x[i], s[i], dox = model.predict_x_dist(x[i], s[i], u, grad=True)
+				Z[i], S[i], doy = model.predict_z_dist(x[i], s[i], grad=True)
 				for j in range( n+1 ):
-					dxdU[i][j], dsdU[i][j] \
-					    = np.matmul( dxdx, dxdU[i][j] ) \
-					            + np.einsum( 'ijk,jkn->in', dxds, dsdU[i][j] ),\
-					      np.matmul( dsdx, dxdU[i][j] ) \
-					            + np.einsum( 'imjk,jkn->imn', dsds, dsdU[i][j] )
+					dxdU[i][j], dsdU[i][j] = gradchain(dox, dxdU, dsdU, i, j)
 					if j == n:
-						dxdU[i][j] += dxdu
-						dsdU[i][j] += dsdu
-					dZdU[i,:,j]   = np.matmul( dZdx, dxdU[i][j] ) \
-					            + np.einsum( 'ijk,jkn->in', dZds, dsdU[i][j] )
-					dSdU[i,:,:,j] = np.matmul( dSdx, dxdU[i][j] ) \
-					            + np.einsum( 'imjk,jkn->imn', dSds, dsdU[i][j] )
+						dxdU[i][j] += dox.dMdu
+						dsdU[i][j] += dox.dSdu
+					dZdU[i,:,j], dSdU[i,:,:,j] = gradchain(doy, dxdU, dsdU, i, j)
 
 				# Update latent state constraints
 				model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
