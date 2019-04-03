@@ -29,7 +29,7 @@ def assert_symmetric_matrix (A):
         raise ValueError('Input must be numpy.ndarray, not %s'%type(A))
     if not A.ndim == 2:
         raise AssertionError('Input must be 2D matrix, not %dD'%A.ndim)
-    if not np.array_equal(A, A.T):
+    if not np.allclose(A, A.T, rtol=1e-8, atol=1e-10):
         raise AssertionError('Matrix not symmetrical')
 
 def assert_pos_def (A):
@@ -45,14 +45,14 @@ def assert_is_shape (arr, shape):
     if not isinstance(shape, (list,tuple)):
         raise ValueError('Input 2 must be list or tuple, not %s'%type(shape))
     if arr.shape != tuple(shape):
-        return AssertionError('Array shape mismatch: %s != %s'%(arr.shape, shape))
+        raise AssertionError('Array shape mismatch: %s != %s'%(arr.shape, shape))
 
 def assert_equal_shape (array1, array2):
     if not isinstance(array1, np.ndarray):
         raise ValueError('Input must be numpy.ndarray, not %s'%type(array1))
     if not isinstance(array2, np.ndarray):
         raise ValueError('Input must be numpy.ndarray, not %s'%type(array2))
-    return assert_is_shape(array1, array2.shape)
+    assert_is_shape(array1, array2.shape)
 
 def assert_not_none (variable, name='<variable_name>'):
     if variable is None:
