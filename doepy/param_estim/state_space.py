@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import numpy as np 
+import numpy as np
 
 from scipy.optimize import least_squares as _least_squares
 from scipy.optimize import differential_evolution as _differential_evolution
@@ -41,33 +41,38 @@ class StateSpaceParamEstim:
 			X0  = [X0]
 		self.X0 = X0
 
+		assert len(self.X0) == len(self.U), 'X0 and U different lengths'
+
 	def __call__ (self, p):
 		self.model.p_mean = p
 		Z = [ self.model.predict(x0,u)[1] for x0,u in zip(self.X0, self.U) ]
 		return np.vstack( Z )
 
 
-def differential_evolution (model, p0, p_bounds, X0, U, Y, W, invert_W=True):
-	"""
-	W - typically measurement noise covariance
-	"""
+def _noise_var (model, W=None):
+	if W is not None:
+		return W
+	H = model.H         # Observation matrix
+	Q = model.x_covar   # Process noise covariance
+	R = model.y_covar   # Measurement noise covariance
+	return np.einsum('ij,jk,kl->il', H, Q, H.T) + R
+
+
+def differential_evolution (model, p0, p_bounds, X0, U, Y, W=None, invert_W=True):
+	W    = _noise_var(model, W)
 	loss = Residual(Y, W, invert_W=invert_W)
 	pred = StateSpaceParamEstim(model, X0, U)
-	
-	obj = lambda p: loss.sum_lsq_loss( pred(p) )
-	res = _differential_evolution(obj, p_bounds)
+	obj  = lambda p: loss.sum_lsq_loss( pred(p) )
+	res  = _differential_evolution(obj, p_bounds)
 	return res
 
 
-def least_squares (model, p0, p_bounds, X0, U, Y, W, invert_W=True):
-	"""
-	W - typically measurement noise covariance
-	"""
+def least_squares (model, p0, p_bounds, X0, U, Y, W=None, invert_W=True):
+	W    = _noise_var(model, W)
 	loss = Residual(Y, W, invert_W=invert_W)
 	pred = StateSpaceParamEstim(model, X0, U)
-	
-	obj = lambda p: loss.sqrt_lsq_loss( pred(p) )
-	res = _least_squares(obj, p0, bounds=p_bounds.T.tolist())
+	obj  = lambda p: loss.sqrt_lsq_loss( pred(p) )
+	res  = _least_squares(obj, p0, bounds=p_bounds.T.tolist())
 	return res
 
 
