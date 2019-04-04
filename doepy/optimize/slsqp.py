@@ -73,7 +73,7 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
 	# derivative for linesearch" when running SLSQP optimisation algorithm
 	saved_f        = []
 	max_saved_f    = 20
-	rescale_factor = 1.
+	rescale_factor = None
 
 	while 1:
 
@@ -95,6 +95,14 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
 				saved_f.append(f)
 			else:
 				saved_f = saved_f[1:] + [f]
+
+			# Initial rescaling factor
+			if rescale_factor is None:
+				fact = np.abs(f)
+				if fact > 5:
+					rescale_factor = 2. / fact
+				else:
+					rescale_factor = 1.
 
 			f  = float(np.asarray(f)) * rescale_factor
 			df = np.append(df, 0.0) * rescale_factor
