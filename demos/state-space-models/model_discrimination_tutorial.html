@@ -13259,9 +13259,7 @@ where $\boldsymbol x_t \sim \mathcal{N}(\boldsymbol \mu_t, \boldsymbol \Sigma_t)
 <div class="prompt input_prompt">In&nbsp;[5]:</div>
 <div class="inner_cell">
     <div class="input_area">
-<div class=" highlight hl-ipython3"><pre><span></span><span class="n">data_savename</span> <span class="o">=</span> <span class="n">save_prefix</span> <span class="o">+</span> <span class="s1">&#39;data.npz&#39;</span>
-
-<span class="c1"># Generate experiment input sequences</span>
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Generate experiment input sequences</span>
 <span class="n">U_data</span> <span class="o">=</span> <span class="n">DM</span><span class="o">.</span><span class="n">get_initial_experiments</span><span class="p">(</span><span class="n">num_init_exp</span><span class="p">,</span> <span class="n">num_time_steps</span><span class="p">)</span>
 <span class="c1"># Run experiments and collect measurements</span>
 <span class="n">Y_data</span> <span class="o">=</span> <span class="p">[</span> <span class="n">datagen</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">U</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">U</span> <span class="ow">in</span> <span class="n">U_data</span> <span class="p">]</span>
@@ -13560,8 +13558,6 @@ We use the Gaussian approximation of the parametric uncertainty, and first-order
     <span class="n">axs</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">Y_data</span><span class="p">[</span><span class="n">j</span><span class="p">][:,</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;k&#39;</span><span class="p">)</span>
     <span class="n">axs</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">Y_data</span><span class="p">[</span><span class="n">j</span><span class="p">][:,</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;k&#39;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;Data&#39;</span><span class="p">)</span>
     
-    <span class="n">savename</span> <span class="o">=</span> <span class="n">save_prefix</span> <span class="o">+</span> <span class="s1">&#39;pred_</span><span class="si">%d</span><span class="s1">.npz&#39;</span><span class="o">%</span><span class="k">j</span>
-    
     <span class="c1"># For saving predictions</span>
     <span class="n">Y</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span> <span class="n">num_models</span><span class="p">,</span> <span class="n">num_time_steps</span><span class="p">,</span> <span class="n">num_meas</span> <span class="p">))</span>
     <span class="n">S_Y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span> <span class="n">num_models</span><span class="p">,</span> <span class="n">num_time_steps</span><span class="p">,</span> <span class="n">num_meas</span><span class="p">,</span> <span class="n">num_meas</span> <span class="p">))</span>
@@ -13583,7 +13579,7 @@ We use the Gaussian approximation of the parametric uncertainty, and first-order
             <span class="n">axs</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">d</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">ls</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">+</span><span class="n">cols</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;</span><span class="si">%s</span><span class="s1">&#39;</span><span class="o">%</span><span class="k">model</span>.name)
             <span class="n">axs</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">d</span><span class="p">]</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">y</span><span class="o">+</span><span class="n">s</span><span class="p">,</span> <span class="n">y</span><span class="o">-</span><span class="n">s</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">cols</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
             
-    <span class="c1"># Save results</span>
+    <span class="c1"># Save predictions</span>
     <span class="n">Y_pred</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">Y</span> <span class="p">)</span>
     <span class="n">S_Y_pred</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">S_Y</span> <span class="p">)</span>
 
