@@ -6,20 +6,24 @@ The slsqp code is taken from scipy.optimize.slsqp._minimize_slsqp
 import numpy as np 
 from scipy.optimize._slsqp import slsqp as scipy_slsqp
 
-def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
+def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
 	"""
 	Wrapping function for scipy SLSQP function to solve control problems with
 	inequality constraints.
 	"""
-	# Transform x0 into an array.
-	x = np.asfarray(x0).flatten()
+	# Transform u0 into an array.
+	u = np.asfarray(u0).flatten()
+
+	# Make sure log_callback is callable function
+	if log_callback is not None:
+		assert callable(log_callback), 'log_callback must be callable function'
 
 	# m = The total number of constraints
 	m = int(problem_instance.num_constraints)
 	# la = The number of constraints, or 1 if there are no constraints
 	la = max([1, m])
 	# n = The number of independent variables
-	n = len(x)
+	n = len(u)
 
 	# Define the workspaces for SLSQP
 	n1     = n + 1
@@ -30,30 +34,30 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 	w  = np.zeros(len_w)
 	jw = np.zeros(len_jw)
 
-	# Decompose bounds into xl and xu
+	# Decompose bounds into ul and uu
 	bnds = np.array(problem_instance.bounds, float)
 	if bnds.shape[0] != n:
 		raise IndexError('SLSQP Error: the length of bounds is not '
-						 'compatible with that of x0.')
+						 'compatible with that of u0.')
 
 	with np.errstate(invalid='ignore'):
 		bnderr = bnds[:, 0] > bnds[:, 1]
 	if bnderr.any():
 		raise ValueError('SLSQP Error: lb > ub in bounds %s.' %
 						 ', '.join(str(b) for b in bnderr))
-	xl, xu = bnds[:, 0], bnds[:, 1]
+	ul, uu = bnds[:, 0], bnds[:, 1]
 
 	# Mark infinite bounds with nans; the Fortran code understands this
 	infbnd = ~np.isfinite(bnds)
-	xl[infbnd[:, 0]] = np.nan
-	xu[infbnd[:, 1]] = np.nan
+	ul[infbnd[:, 0]] = np.nan
+	uu[infbnd[:, 1]] = np.nan
 
 	# Clip initial guess to bounds 
 	# (SLSQP may fail with bounds-infeasible initial point)
-	have_bound    = np.isfinite(xl)
-	x[have_bound] = np.clip(x[have_bound], xl[have_bound], np.inf)
-	have_bound    = np.isfinite(xu)
-	x[have_bound] = np.clip(x[have_bound], -np.inf, xu[have_bound])
+	have_bound    = np.isfinite(ul)
+	u[have_bound] = np.clip(u[have_bound], ul[have_bound], np.inf)
+	have_bound    = np.isfinite(uu)
+	u[have_bound] = np.clip(u[have_bound], -np.inf, uu[have_bound])
 
 	# Initialize the iteration counter and the mode value
 	mode    = np.array(0, int)
@@ -79,7 +83,11 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 			corresponding gradients. (It is assumed that gradients are 
 			computed as part of objective and constraint evaluation.)
 			"""
-			f, c, df, dc = problem_instance(x)
+			f, c, df, dc = problem_instance(u)
+
+			# Write to log
+			if log_callback is not None:
+				log_callback(u, f, c, df, dc)
 
 			# Keep record of latest function evaluations
 			# - for computing rescaling factor
@@ -92,12 +100,12 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 			df = np.append(df, 0.0) * rescale_factor
 			dc = np.c_[ dc, np.zeros( la ) ]
 
-			if np.any([np.any(np.isnan(mat)) for mat in [x, f, c, df, dc]]):
+			if np.any([np.any(np.isnan(mat)) for mat in [u, f, c, df, dc]]):
 				mode = 10
 				break
 			
 		# Call SLSQP
-		scipy_slsqp(m, 0, x, xl, xu, f, c, df, dc, acc, majiter, mode, w, jw,
+		scipy_slsqp(m, 0, u, ul, uu, f, c, df, dc, acc, majiter, mode, w, jw,
 		            alpha, f0, gs, h1, h2, h3, h4, t, t0, tol,
 		            iexact, incons, ireset, itermx, line, n1, n2, n3)
 
@@ -114,11 +122,11 @@ def slsqp (problem_instance, x0, maxiter=100, ftol=1.0E-6):
 			else:
 				break
 
-	x   = x.reshape( x0.shape )
+	u   = u.reshape( u0.shape )
 	f   = f / rescale_factor
 	df  = df[:-1] / rescale_factor
 	dc  = dc[:,:-1]
-	res = {'x':x, 'f':f, 'c':c, 'df':df, 'dc':dc}
+	res = {'u':u, 'f':f, 'c':c, 'df':df, 'dc':dc}
 
 	status  = int(mode)
 	success = status == 0
