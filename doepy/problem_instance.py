@@ -61,7 +61,7 @@ class ProblemInstance:
 			self.num_constraints += self.num_steps * model.num_x_constraints()
 
 
-	def sample_U (self, check_constraints=True):
+	def sample_U (self, check_constraints=False):
 		# U : sampled control signal
 		# C : (boolean) checks if U satisfies control constraints
 		ul, uu = self.u_bounds[:,0], self.u_bounds[:,1]
@@ -112,7 +112,7 @@ class ProblemInstance:
 		dSdU = np.zeros(( M, E, E, N, D))
 
 		def gradchain (do, dxdU, dsdU, i, j):
-			dMdu = np.matmul( do.dMdx, dxdU[i][j] ) \
+			dMdU = np.matmul( do.dMdx, dxdU[i][j] ) \
 			            + np.einsum( 'ijk,jkn->in', do.dMds, dsdU[i][j] )
 			dSdU = np.matmul( do.dSdx, dxdU[i][j] ) \
 			            + np.einsum( 'imjk,jkn->imn', do.dSds, dsdU[i][j] )
