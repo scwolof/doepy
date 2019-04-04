@@ -36,8 +36,9 @@ Z - mean
 S - covariance
 """
 
-def symmetric (Y, Z, S):
+def symmetric_KL (Y, Z, S):
 	return 0.5 * ( KL_P0Pw(Y, Z, S) + KL_PwP0(Y, Z, S) )
+
 
 def KL_P0Pw (Y, Z, S):
 	r"""
