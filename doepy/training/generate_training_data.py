@@ -27,7 +27,7 @@ import numpy as np
 from .find_active_dims import find_active_dims
 
 def generate_training_data (f, x_bounds, u_bounds, p_bounds=None, active_dims=None,
-                   num_data_points_per_num_dim=None):
+                   num_data_points_per_num_dim=None, return_active_dims=False):
     """
     Generate training data sets for each target dimension of f
     """
@@ -40,9 +40,14 @@ def generate_training_data (f, x_bounds, u_bounds, p_bounds=None, active_dims=No
     X, U = generate_locations(bounds, active_dims, num_data_points_per_num_dim)
     # Generate observations at points [x,u,(p)] in (X,U)
     Y    = generate_observations(f, X, U, active_dims, p_bounds=p_bounds)
+    T    = (X, U)
     if p_bounds is None:
-        return X, U, Y
-    return X, U, Y[0], Y[1]
+        T += (Y, )
+    else:
+        T += (Y[0], Y[1])
+    if return_active_dims:
+        return T, active_dims
+    return T
 
 
 def generate_locations (bounds, active_dims, num_data_points_per_num_dim=None):
