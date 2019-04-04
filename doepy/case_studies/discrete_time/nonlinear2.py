@@ -65,6 +65,7 @@ class Model:
         self.u_bounds = np.array([[0., 0.1]])
         self.u_delta  = [ 0.01 ]
         self.x_bounds = np.array([[0.,2.],[0.,3.],[0.,5.]])
+        self.z_bounds = np.matmul( self.H[:,:3], self.x_bounds )
 
     def __call__ (self, x, u, p):
     	# Transition function
