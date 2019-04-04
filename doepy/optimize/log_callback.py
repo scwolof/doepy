@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import time
+from time import localtime
 import pickle
 from pathlib import Path
 
@@ -33,8 +33,9 @@ class LogCallback:
 		self.save_gradients = save_gradients
 
 		# Time stamp
-		t = time.localtime()
-		t = "%d_%d_%d_%d%d" %(t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min)
+		t      = localtime()
+		t_day  = "%d_%d_%d" %(t.tm_year, t.tm_mon, t.tm_mday)
+		t_time = "%d%d_%d" %(t.tm_hour, t.tm_min, t.tm_sec)
 
 		if save_folder is None:
 			self.logfile = Path()
@@ -42,7 +43,7 @@ class LogCallback:
 			self.logfile = Path(save_folder)
 			assert self.logfile.is_dir(), 'Invalid directory: %s'%self.logfile
 
-		self.logfile /= '%s_%s.pickle'%(savefile_prefix, t)
+		self.logfile /= '%s_%s_%s.pickle'%(savefile_prefix, t_day, t_time)
 		
 	def load (self):
 		with open(self.logfile, 'rb') as fil:
