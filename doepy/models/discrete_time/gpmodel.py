@@ -147,6 +147,8 @@ class dtGPModel (dtModel):
 
 		if hyp is None:
 			hyp = [None] * len(T)
+
+		self.gps = []
 		for t, z, ad, h in zip(T, Z, active_dims, hyp):
 			gp = self._train_gp(t, z, ad, noise_var, hyp=h, **kwargs)
 			self.gps.append(gp)
