@@ -33,34 +33,43 @@ class Model:
         self.num_states = num_states
         self.num_meas   = 2
 
+        # Observation matrix
         self.H = np.zeros((self.num_meas, self.num_states))
         self.H[0,0] = 1
         self.H[1,1] = 1
 
-        self.Q      = 2.5e-5 * np.eye(self.num_states)
-        self.Q[0,2] = 1e-6
-        self.Q[2,0] = 1e-6
+        # Process noise covariance
+        self.Q      = 1e-6 * np.eye(self.num_states)
+        self.Q[0,2] = 1e-7
+        self.Q[2,0] = 1e-7
 
+        # Measurement noise covariance
         self.R   = 2e-4 * np.eye(self.num_meas)
-        self.S_u = 1e-5 * np.eye(self.num_inputs)
+        # Control input covariance
+        self.S_u = 1e-6 * np.eye(self.num_inputs)
         
+        # Initial parameter guess
         self.p0 = [0.2, 0.1, 0.01]
 
+        # Initial latent state
         self.x0    = np.zeros(self.num_states)
         self.x0[0] = 1
         self.x0[2] = 0.01
 
+        # Initial latent state covariance
         self.S_x0      = np.zeros((self.num_states, self.num_states))
         self.S_x0[0,0] = 1e-4
         self.S_x0[2,2] = 1e-6
         
+        # Control and latent state bounds
         self.u_bounds = np.array([[0., 0.1]])
+        self.u_delta  = [ 0.01 ]
         self.x_bounds = np.array([[0.,2.],[0.,3.],[0.,5.]])
 
     def __call__ (self, x, u, p):
+    	# Transition function
         dx = x + self.change(x, u, p)
-        dx = np.maximum(dx, 0)
-        return dx
+        return np.maximum(dx, 0)
 
     @property
     def num_param (self):
@@ -100,6 +109,7 @@ class M1 (Model):
         dV =  k1*S*V - k3*A*V
         return np.array([ dS, dA, dV ])
 
+
 class M2 (Model):
     def __init__ (self):
         super().__init__('M2',3)
@@ -113,6 +123,7 @@ class M2 (Model):
         dA =  C*k2*S*V - (1-C)*k4*A*V
         dV =  C*k1*S*V + (1-C)*0.5*k4*A*V - k3*A*V
         return np.array([ dS, dA, dV ])
+
 
 class M3 (Model):
     def __init__ (self):
@@ -131,16 +142,32 @@ class M3 (Model):
         return np.array([ dS, dA, dV, dP ])
 
 
-class DataGen (M3):
+class DataGen (M2):
     def __init__ (self):
         super().__init__()
 
     @property
     def p (self):
-        return [0.201, 0.098, 0.0099, 0.051, 0.0101, 0.0098]
+        return [0.201, 0.098, 0.0099, 0.051, 0.0101] #, 0.0098]
 
     def __call__ (self, x, u):
         return super().__call__(x, u, self.p)
+
+    def get_initial_experiments (self, num_exp, num_steps, u_var=0.02):
+        ones  = lambda n: np.ones(( n, self.num_inputs ))
+        zeros = lambda n: np.zeros(( n, self.num_inputs ))
+
+        U_data = [ zeros(num_steps) ]
+
+        for n in range(num_exp-1):
+            r  = u_var * np.random.rand( self.num_inputs )
+            U1 = r[None,:] * ones(num_steps)
+            for n in np.arange(num_steps)[::-1]:
+                umax  = ( num_steps - n - 1 ) * np.array(self.u_delta)
+                U1[n] = np.minimum( U1[n], umax )
+            U_data.append( U1 )
+
+        return U_data
 
     def get_candidate_dict (self):
         d = super().get_candidate_dict()
