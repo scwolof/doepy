@@ -82,36 +82,6 @@ class dtGPModel (dtModel):
 	"""
 	Train GP surrogates
 	"""
-	def _gp_regression (self, X, Y, kern, **kwargs):
-		return GPRegression(X, Y, kern)
-
-	def _train_gp (self, inp, out, active_dims, noise_var=default_noise_var,
-	               hyp=None, **kwargs):
-		dim  = len( active_dims )
-		kern = RBF(dim, active_dims=active_dims, ARD=True)
-		with warnings.catch_warnings():
-			warnings.filterwarnings("ignore", 
-					message="Your kernel has a different input dimension")
-			out = out.reshape((inp.shape[0], 1))
-			gp  = self._gp_regression(inp, out, kern, **kwargs)
-		if hyp is None:
-			# Constrain noise variance
-			gp.Gaussian_noise.variance.constrain_fixed(noise_var)
-			# Constrain lengthscales
-			LS = np.max(inp, axis=0) - np.min(inp, axis=0)
-			for d, ad in enumerate(active_dims):
-				gp.kern.lengthscale[[d]].constrain_bounded(
-					lower=1e-25, upper=10.*LS[ad], warning=False )
-			# Optimise hyperparameters
-			gp.optimize()
-		else:
-			# Assign existing hyperparameter values
-			gp.update_model(False)
-			gp.initialize_parameter()
-			gp[:] = hyp
-			gp.update_model(True)
-		return gp
-
 	def train (self, active_dims=None, noise_var=default_noise_var, hyp=None, **kwargs):
 		# Training data dictionary
 		dic = {'f':self.f, 'active_dims': active_dims,
@@ -163,7 +133,39 @@ class dtGPModel (dtModel):
 		z_mean = np.array([ np.mean(z) for z in Z ])
 		z_std  = np.array([ np.std(z) for z in Z ])
 		self.z_transform = Transform( z_mean, z_std )
-		return [ (z-m)/q for z,m,q in zip(Z, z_mean, z_std) ]
+		return [ self.z_transform(z,dim=e) for e,z in enumerate(Z) ]
+
+	def _train_gp (self, inp, out, active_dims, noise_var=default_noise_var,
+	               hyp=None, **kwargs):
+		kern = RBF(len(active_dims), active_dims=active_dims, ARD=True)
+
+		with warnings.catch_warnings():
+			warnings.filterwarnings("ignore", 
+					message="Your kernel has a different input dimension")
+			out = out.reshape((inp.shape[0], 1))
+			gp  = self._gp_regression(inp, out, kern, **kwargs)
+
+		# Constrain noise variance
+		gp.Gaussian_noise.variance.constrain_fixed(noise_var)
+		# Constrain lengthscales
+		LS = np.max(inp, axis=0) - np.min(inp, axis=0)
+		for d, ad in enumerate(active_dims):
+			gp.kern.lengthscale[[d]].constrain_bounded(
+				lower=1e-25, upper=10.*LS[ad], warning=False )
+
+		if hyp is None:
+			# Optimise hyperparameters
+			gp.optimize()
+		else:
+			# Assign existing hyperparameter values
+			gp.update_model(False)
+			gp.initialize_parameter()
+			gp[:] = hyp
+			gp.update_model(True)
+		return gp
+
+	def _gp_regression (self, X, Y, kern, **kwargs):
+		return GPRegression(X, Y, kern)
 
 
 	"""
@@ -178,9 +180,13 @@ class dtGPModel (dtModel):
 			filename += suffix
 
 		T, Z, active_dims, hyp = [], [], [], []
-		for gp in self.gps:
-			T.append(gp.X)
-			Z.append(gp.Y)
+		for e,gp in enumerate(self.gps):
+			x, z = gp.X, gp.Y
+			if self.transform:
+				x = self.t_transform(x, back=True)
+				z = self.z_transform(z, back=True, dim=e)
+			T.append(x)
+			Z.append(z)
 			hyp.append(gp[:])
 			active_dims.append(gp.kern.active_dims)
 
