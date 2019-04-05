@@ -27,6 +27,7 @@ import numpy as np
 from . import LatentStateDerivativeObject
 
 from .model import dtModel
+from ...utils import assert_not_none
 from ...approximate_inference import taylor_moment_match
 
 class dtNonLinearModel (dtModel):
@@ -59,20 +60,41 @@ class dtNonLinearModel (dtModel):
 	State prediction
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+		has_param = self.num_param is not None and self.num_param > 0
+
+		inp = (xk, u)
+		if has_param:
+			assert_not_none(self.p_mean, '%s:p_mean'%self.name)
+			assert_not_none(self.p_covar, '%s:p_covar'%self.name)
+			inp += (self.p_mean,)
+
+		M, do = self.f( *inp, grad=True )
+
 		if self.hessian:
-			M, dfdx, dfdu, ddfddx, ddfddu, ddfdxu = self.f( xk, u, grad=True )
-			x_xu   = np.concatenate(( ddfddx, ddfdxu ), axis=2)
-			ddfdxu = np.transpose(ddfdxu, axes=[0,2,1])
-			ux_u   = np.concatenate(( ddfdxu, ddfddu ), axis=2)
-			ddM    = np.concatenate(( x_xu, ux_u ), axis=1)
+			assert do.dMdx.ndim == 2, 'Number of test points must be None!'
+			x_xu  = np.concatenate(( do.dMdxx, do.dMdxu ), axis=2)
+			dMdxu = np.transpose( do.dMdxu, axes=[0,2,1] )
+			ux_u  = np.concatenate(( dMdxu, do.dMduu ), axis=2)
+			ddM   = np.concatenate(( x_xu, ux_u ), axis=1)
+			if has_param:
+				xup = np.concatenate(( do.dMdxp, do.dMdup ), axis=1 )
+				ddM = np.concatenate(( ddM, xup ), axis=2 )
+				xup = np.transpose( xup, axes=[0,2,1] )
+				xup = np.concatenate(( xup, do.dMdpp ), axis=2 )
+				ddM = np.concatenate(( ddM, xup ), axis=1 )
 		else:
-			M, dfdx, dfdu = self.f( xk, u, grad=True )
 			ddM = None
-		dMdm = np.concatenate((dfdx, dfdu), axis=1)
-		dim  = self.num_states + self.num_inputs
-		Snew = np.zeros((dim, dim))
-		Dss  = np.cumsum([0] + [self.num_states, self.num_inputs]) #, self.num_param])
-		for i,Si in enumerate([Sk, self.u_covar]): #, self.p_covar]):
+
+		dMdm = np.concatenate(( do.dMdx, do.dMdu ), axis=1)
+		dim  = [self.num_states, self.num_inputs]
+		Ss   = [Sk, self.u_covar]
+		if has_param:
+			dMdm = np.concatenate(( dMdm, do.dMdp ), axis=1)
+			dim += [self.num_param,]
+			Ss  += [self.p_covar]
+		Dss  = np.cumsum([0,] + dim)
+		Snew = np.zeros((Dss[-1], Dss[-1]))
+		for i,Si in enumerate( Ss ):
 			i1, i2 = Dss[i], Dss[i+1]
 			Snew[i1:i2, i1:i2] = Si
 
@@ -98,7 +120,7 @@ class dtNonLinearModel (dtModel):
 			do.dVdx = domm.dVdm[:D,:,:D]
 			do.dVdu = domm.dVdm[:D,:,D:dn]
 			do.dVds = domm.dVds[:D,:,:D,:D]
-			if self.num_param is not None and self.num_param > 0:
+			if has_param:
 				P = self.num_param
 				do.dMdp = domm.dMdm[:,-P:]
 				do.dSdp = domm.dSdm[:,:,-P:]
