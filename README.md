@@ -5,14 +5,19 @@
 
 Currently implements:
 * State uncertainty
-* Some control input uncertainty
+* Control input uncertainty
 * Delta constraints on control input
-* Mean state constraints
+* Mean (latent and observed) state constraints
 * Design criteria
+* Discrimination criteria
 * SLSQP optimisation
+* Model parameter uncertainty (GPs)
 
-Does not implement:
-* Model parameter uncertainty
+Does not (yet) implement:
+* Model parameter uncertainty (nonlinear analytic models)
+* Continuous-time state space models
+* Static models
+* Function in ProblemInstance to specify what constraint(s) is violated
 
 ## Pronounciation
 We pronounce the package name as '_dopey_'
