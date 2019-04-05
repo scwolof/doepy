@@ -24,68 +24,24 @@ SOFTWARE.
 
 import numpy as np
 
-class DerivativeObject:
-	def __init__ (self):
-		pass
-
-	def insert (self, do, n):
-		D = self.__dict__
-		for d in D:
-			if d in do.__dict__:
-				t    = getattr(self,d)
-				t[n] = getattr(do,d)
+from ..derivative_object import DerivativeObject
 
 class LatentStateDerivativeObject (DerivativeObject):
-	def __init__ (self, model, n=None):
-		super().__init__()
-		# Dimensions
-		D = model.num_inputs
-		E = model.num_states
-		P = model.num_param
-		# Inputs
-		x = np.empty( E )        # Latent state mean
-		s = np.empty((E, E))     # Latent state covariance
-		u = np.empty( D )        # Control mean
-		
-		# Outputs
-		i = (E,) if n is None else (n,E)
-		M = np.empty( i )        # Predictive mean
-		S = np.empty( i + (E,))  # Predictive covariance
-		V = np.empty( i + (E,))  # Predictive state input-output covariance
+	def __init__ (self, model, num_test_points=None, Hessian=False):
+		d = {'num_out': model.num_states,
+		     'num_inputs': model.num_inputs,
+		     'num_param': model.num_param,
+		     'num_states': model.num_states,
+		     'covariance': True,
+		     'in_out_covariance':True,
+		     'num_test_points':num_test_points}
+		super().__init__(**d)
 
-		self.dMdx = np.zeros( M.shape + x.shape )
-		self.dMdu = np.zeros( M.shape + u.shape )
-		self.dMds = np.zeros( M.shape + s.shape )
-		self.dSdx = np.zeros( S.shape + x.shape )
-		self.dSdu = np.zeros( S.shape + u.shape )
-		self.dSds = np.zeros( S.shape + s.shape )
-		self.dVdx = np.zeros( V.shape + x.shape )
-		self.dVdu = np.zeros( V.shape + u.shape )
-		self.dVds = np.zeros( V.shape + s.shape )
-
-		P = model.num_param
-		if P is not None and P > 0:
-			p = np.empty( P )     # Model parameter mean
-			self.dMdp = np.zeros( M.shape + p.shape )
-			self.dSdp = np.zeros( S.shape + p.shape )
-			self.dVdp = np.zeros( V.shape + p.shape )
 
 class MeasDerivativeObject (DerivativeObject):
-	def __init__ (self, model, n=None):
-		super().__init__()
-		# Dimensions
-		D = model.num_states
-		E = model.num_meas
-		# Inputs
-		x = np.empty( D )        # Latent state mean
-		s = np.empty((D, D))     # Latent state covariance
-		
-		# Outputs
-		i = (E,) if n is None else (n,E)
-		M = np.empty( i )        # Predictive mean
-		S = np.empty( i + (E,))  # Predictive covariance
-
-		self.dMdx = np.zeros( M.shape + x.shape )
-		self.dMds = np.zeros( M.shape + s.shape )
-		self.dSdx = np.zeros( S.shape + x.shape )
-		self.dSds = np.zeros( S.shape + s.shape )
+	def __init__ (self, model, num_test_points=None):
+		d = {'num_out': model.num_meas,
+		     'num_states': model.num_states,
+		     'covariance': True,
+		     'num_test_points':num_test_points}
+		super().__init__(**d)
