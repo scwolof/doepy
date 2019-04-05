@@ -11,10 +11,9 @@ Currently implements:
 * Design criteria
 * Discrimination criteria
 * SLSQP optimisation
-* Model parameter uncertainty (GPs)
+* Model parameter uncertainty
 
 Does not (yet) implement:
-* Model parameter uncertainty (nonlinear analytic models)
 * Continuous-time state space models
 * Static models
 * Function in ProblemInstance to specify what constraint(s) is violated
