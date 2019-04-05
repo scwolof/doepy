@@ -65,7 +65,7 @@ class Model:
         self.u_bounds = np.array([[0., 0.1]])
         self.u_delta  = [ 0.01 ]
         self.x_bounds = np.array([[0.,2.],[0.,3.],[0.,5.]])
-        self.z_bounds = np.matmul( self.H[:,:3], self.x_bounds )
+        self.z_bounds = np.array([[-0.1, 2.],[-0.1, 3.]])
 
     def __call__ (self, x, u, p):
     	# Transition function
@@ -130,7 +130,7 @@ class M3 (Model):
     def __init__ (self):
         super().__init__('M3',4)
         self.p0 += [0.05, 0.01, 0.01]
-        self.x_bounds = np.vstack((self.x_bounds, np.array([0., 1.])))
+        self.x_bounds = np.vstack((self.x_bounds, np.array([0., 0.5])))
 
     def change (self, x, u, p):
         S, A, V, P             = x
