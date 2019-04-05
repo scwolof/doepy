@@ -66,8 +66,8 @@ class dtGPModel (dtModel):
 		assert_not_none(self.u_bounds,'u_bounds')
 
 		assert_not_none(candidate_model.x_bounds,'candidate:x_bounds')
-		self.x_bounds     = candidate_model.x_bounds
-		self.x_constraint = None
+		self.x_bounds      = candidate_model.x_bounds
+		self.x_constraints = None
 
 		self.transform   = True if candidate_model.transform is None\
                                 else candidate_model.transform
@@ -217,7 +217,27 @@ class dtGPModel (dtModel):
 	State constraints
 	"""
 	def initialise_x_constraints (self):
-		self.x_constraints = ConstantMeanStateConstraint(self.x_bounds)
+		# Find maximum lengthscales
+		hyp = np.zeros((self.num_states, self.num_states))
+		for e,gp in enumerate(self.gps):
+			L = gp.kern.lengthscale
+			A = gp.kern.active_dims
+			A = A[ A<self.num_states ]
+			for a,l in zip(A,L):
+				hyp[e,a] = self.t_transform(l, back=True, dim=e)
+		hyp = np.max(hyp,axis=0)
+
+		# Find min distances in training data
+		Xt = np.vstack([ gp.X for gp in self.gps ])
+		Xt = self.t_transform(Xt, back=True)[:,:self.num_states]
+		Xt = np.abs(Xt[1:] - Xt[:-1])
+		Xt = np.min( np.where(Xt>0, Xt, np.inf), axis=0 )
+
+		# We can allow a little bit of slack in latent states
+		slack  = Xt / np.where(hyp>0, hyp, 100.)
+		bounds = self.x_bounds + np.c_[-slack, slack]
+
+		self.x_constraints = ConstantMeanStateConstraint(bounds)
 		self.c, self.dcdU  = None, None
 
 	def update_x_constraints (self, x, s, dxdU, dsdU, step=None):
