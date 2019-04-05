@@ -69,10 +69,10 @@ class dtGPModel (dtModel):
 		self.x_bounds      = candidate_model.x_bounds
 		self.x_constraints = None
 
-		self.transform   = True if candidate_model.transform is None\
-                                else candidate_model.transform
-		self.z_transform = None
-		self.t_transform = None
+		self.transform = True if candidate_model.transform is None\
+                            else candidate_model.transform
+		self.output_transform = None
+		self.input_transform  = None
 
 		self.delta_transition = False if candidate_model.delta_transition is None\
                                       else candidate_model.delta_transition
@@ -125,15 +125,15 @@ class dtGPModel (dtModel):
 
 	def set_up_input_transforms (self, T):
 		# Input transforms: t' ~ [ 0, 1 ]^D
-		self.t_transform = BoxTransform( np.concatenate( T, axis=0 ) )
-		return [ self.t_transform(t) for t in T ]
+		self.input_transform = BoxTransform( np.concatenate( T, axis=0 ) )
+		return [ self.input_transform(t) for t in T ]
 
 	def set_up_target_transforms (self, Z):
 		# Target transform: z' ~ N( 0, I )
 		z_mean = np.array([ np.mean(z) for z in Z ])
 		z_std  = np.array([ np.std(z) for z in Z ])
-		self.z_transform = Transform( z_mean, z_std )
-		return [ self.z_transform(z,dim=e) for e,z in enumerate(Z) ]
+		self.output_transform = Transform( z_mean, z_std )
+		return [ self.output_transform(z,dim=e) for e,z in enumerate(Z) ]
 
 	def _train_gp (self, inp, out, active_dims, noise_var=default_noise_var,
 	               hyp=None, **kwargs):
@@ -183,8 +183,8 @@ class dtGPModel (dtModel):
 		for e,gp in enumerate(self.gps):
 			x, z = gp.X, gp.Y
 			if self.transform:
-				x = self.t_transform(x, back=True)
-				z = self.z_transform(z, back=True, dim=e)
+				x = self.input_transform(x, back=True)
+				z = self.output_transform(z, back=True, dim=e)
 			T.append(x)
 			Z.append(z)
 			hyp.append(gp[:])
@@ -224,12 +224,12 @@ class dtGPModel (dtModel):
 			A = gp.kern.active_dims
 			A = A[ A<self.num_states ]
 			for a,l in zip(A,L):
-				hyp[e,a] = self.t_transform(l, back=True, dim=e)
+				hyp[e,a] = self.input_transform(l, back=True, dim=e)
 		hyp = np.max(hyp,axis=0)
 
 		# Find min distances in training data
 		Xt = np.vstack([ gp.X for gp in self.gps ])
-		Xt = self.t_transform(Xt, back=True)[:,:self.num_states]
+		Xt = self.input_transform(Xt, back=True)[:,:self.num_states]
 		Xt = np.abs(Xt[1:] - Xt[:-1])
 		Xt = np.min( np.where(Xt>0, Xt, np.inf), axis=0 )
 
@@ -267,8 +267,8 @@ class dtGPModel (dtModel):
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		if self.transform:
-			assert_not_none(self.z_transform, 'z_transform')
-			assert_not_none(self.t_transform, 'z_transform')
+			assert_not_none(self.output_transform, 'output_transform')
+			assert_not_none(self.input_transform, 'input_transform')
 		assert not self.gps == [], 'GP surrogate(s) not trained yet.'
 
 		# Input mean
@@ -291,8 +291,8 @@ class dtGPModel (dtModel):
 			S_t[i1:i2, i1:i2] = Si
 
 		if self.transform:
-			tnew = self.t_transform( tnew )
-			S_t  = self.t_transform.cov( S_t )
+			tnew = self.input_transform( tnew )
+			S_t  = self.input_transform.cov( S_t )
 
 		# Moment matching
 		res = self.moment_match(self.gps, tnew, S_t, grad=grad)
@@ -304,9 +304,9 @@ class dtGPModel (dtModel):
 				
 		# Transform back
 		if self.transform:
-			qt,qz = self.t_transform.q, self.z_transform.q
-			M     = self.z_transform(M, back=True)
-			S     = self.z_transform.cov(S, back=True)
+			qt,qz = self.input_transform.q, self.output_transform.q
+			M     = self.output_transform(M, back=True)
+			S     = self.output_transform.cov(S, back=True)
 			qtqz  = qt[:,None] * qz[None,:]
 			V    *= qtqz
 			if grad:
