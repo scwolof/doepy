@@ -34,10 +34,15 @@ class Transform:
 		self.qsafe0 = np.where(self.q != 0, 1, 0)
 		self.qsafe1 = np.where(self.q != 0, self.q, 1)
 
-	def __call__ (self, X, back=False):
-		if back:
-			return self.m + X * self.q
-		return (X - self.m) / self.qsafe1 * self.qsafe0
+	def __call__ (self, X, back=False, dim=None):
+		if dim is None:
+			if back:
+				return self.m + X * self.q
+			return (X - self.m) / self.qsafe1 * self.qsafe0
+		else:
+			if back:
+				return self.m[dim] + X * self.q[dim]
+			return (X - self.m[dim]) / self.qsafe1[dim] * self.qsafe0[dim]
 
 	def var (self, X, back=False):
 		if back:
