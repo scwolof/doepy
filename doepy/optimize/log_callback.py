@@ -54,12 +54,12 @@ class LogCallback:
 		with open(self.logfile, 'wb') as fil:
 			pickle.dump(data, fil, pickle.HIGHEST_PROTOCOL)
 
-	def __call__ (self, u, f, c, df, dc):
+	def __call__ (self, u, f, c, df, dc, rescale_factor):
 		# LOAD
 		if self.logfile.is_file():
 			data = self.load()
 		else:
-			data = {'u':[], 'f':[], 'c':[], 'n':0}
+			data = {'u':[], 'f':[], 'c':[], 'r':[], 'n':0}
 			if self.save_gradients:
 				data.update({'df':[], 'dc':[]})
 
@@ -67,6 +67,7 @@ class LogCallback:
 		data['u'].append(u)
 		data['f'].append(f)
 		data['c'].append(c)
+		data['r'].append(rescale_factor)
 		data['n'] += 1
 		if self.save_gradients:
 			data['df'].append(df)

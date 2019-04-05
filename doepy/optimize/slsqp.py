@@ -65,7 +65,6 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
 	majiter = np.array(maxiter, int)
 
 	# Initialize internal SLSQP state variables
-	float_zero = lambda n: [ np.array(0, float) ] * n
 	alpha, f0, gs, h1, h2, h3, h4, t, t0, tol = [ np.array(0, float) ] * 10
 	iexact, incons, ireset, itermx, line, n1, n2, n3 = [ np.array(0, int) ] * 8
 
@@ -85,17 +84,6 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
 			"""
 			f, c, df, dc = problem_instance(u)
 
-			# Write to log
-			if log_callback is not None:
-				log_callback(u, f, c, df, dc)
-
-			# Keep record of latest function evaluations
-			# - for computing rescaling factor
-			if len(saved_f) < max_saved_f:
-				saved_f.append(f)
-			else:
-				saved_f = saved_f[1:] + [f]
-
 			# Initial rescaling factor
 			if rescale_factor is None:
 				fact = np.abs(f)
@@ -103,6 +91,18 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
 					rescale_factor = 2. / fact
 				else:
 					rescale_factor = 1.
+				#print('Initial rescaling: %f'%(rescale_factor))
+
+			# Write to log
+			if log_callback is not None:
+				log_callback(u, f, c, df, dc, rescale_factor)
+
+			# Keep record of latest function evaluations
+			# - for computing rescaling factor
+			if len(saved_f) < max_saved_f:
+				saved_f.append(f)
+			else:
+				saved_f = saved_f[1:] + [f]
 
 			f  = float(np.asarray(f)) * rescale_factor
 			df = np.append(df, 0.0) * rescale_factor
@@ -127,6 +127,7 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
 				rescale_factor = 2. / np.mean(abs_non_zero_f)
 				f  *= rescale_factor
 				df *= rescale_factor
+				#print('Changing rescaling: %f'%(rescale_factor))
 			else:
 				break
 
