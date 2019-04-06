@@ -26,25 +26,18 @@ from os.path import isfile
 import numpy as np 
 import pickle
 
-from GPy.models import GPRegression
-from GPy.kern import RBF
-
-import warnings
-import logging
-logging.getLogger('GP').propagate = False
-
 from . import LatentStateDerivativeObject
 from .model import dtModel
+from ..gpmodel import GPModel
 
 from ...utils import assert_not_none
 from ...training import generate_training_data
-from ...transform import BoxTransform, Transform
 from ...constraints import ConstantMeanStateConstraint
 from ...approximate_inference import gp_taylor_moment_match
 
 default_noise_var = 1e-5
 
-class dtGPModel (dtModel):
+class dtGPModel (dtModel, GPModel):
 	def __init__ (self, candidate_model, moment_match=gp_taylor_moment_match):
 		"""
 		We assume we do not have gradient information for f
@@ -55,24 +48,15 @@ class dtGPModel (dtModel):
 		    f( x_k, u_k ) = g( x_k, u_k )
 
 		We place a GP prior on the function g
-
-		transform : transform [x,u] -> [0, 1]^dim, and ( x_{k+1} - m) / std
-		## WARNING - transform suffering problems ##
 		"""
-		super().__init__(candidate_model)
-
-		self.gps = []
+		dtModel.__init__(self, candidate_model)
+		GPModel.__init__(self, transform=candidate_model.transform)
 
 		assert_not_none(self.u_bounds,'u_bounds')
 
 		assert_not_none(candidate_model.x_bounds,'candidate:x_bounds')
 		self.x_bounds      = candidate_model.x_bounds
 		self.x_constraints = None
-
-		self.transform = True if candidate_model.transform is None\
-                            else candidate_model.transform
-		self.output_transform = None
-		self.input_transform  = None
 
 		self.delta_transition = False if candidate_model.delta_transition is None\
                                       else candidate_model.delta_transition
@@ -109,109 +93,6 @@ class dtGPModel (dtModel):
 
 		self._train(T, Z, active_dims, noise_var, hyp=hyp, **kwargs)
 
-	def _train (self, T, Z, active_dims, noise_var=default_noise_var,
-	            hyp=None, **kwargs):
-		if self.transform:
-			T = self.set_up_input_transforms(T)
-			Z = self.set_up_target_transforms(Z)
-
-		if hyp is None:
-			hyp = [None] * len(T)
-
-		self.gps = []
-		for t, z, ad, h in zip(T, Z, active_dims, hyp):
-			gp = self._train_gp(t, z, ad, noise_var, hyp=h, **kwargs)
-			self.gps.append(gp)
-
-	def set_up_input_transforms (self, T):
-		# Input transforms: t' ~ [ 0, 1 ]^D
-		self.input_transform = BoxTransform( np.concatenate( T, axis=0 ) )
-		return [ self.input_transform(t) for t in T ]
-
-	def set_up_target_transforms (self, Z):
-		# Target transform: z' ~ N( 0, I )
-		z_mean = np.array([ np.mean(z) for z in Z ])
-		z_std  = np.array([ np.std(z) for z in Z ])
-		self.output_transform = Transform( z_mean, z_std )
-		return [ self.output_transform(z,dim=e) for e,z in enumerate(Z) ]
-
-	def _train_gp (self, inp, out, active_dims, noise_var=default_noise_var,
-	               hyp=None, **kwargs):
-		kern = RBF(len(active_dims), active_dims=active_dims, ARD=True)
-
-		with warnings.catch_warnings():
-			warnings.filterwarnings("ignore", 
-					message="Your kernel has a different input dimension")
-			out = out.reshape((inp.shape[0], 1))
-			gp  = self._gp_regression(inp, out, kern, **kwargs)
-
-		# Constrain noise variance
-		gp.Gaussian_noise.variance.constrain_fixed(noise_var)
-		# Constrain lengthscales
-		LS = np.max(inp, axis=0) - np.min(inp, axis=0)
-		for d, ad in enumerate(active_dims):
-			gp.kern.lengthscale[[d]].constrain_bounded(
-				lower=1e-25, upper=10.*LS[ad], warning=False )
-
-		if hyp is None:
-			# Optimise hyperparameters
-			gp.optimize()
-		else:
-			# Assign existing hyperparameter values
-			gp.update_model(False)
-			gp.initialize_parameter()
-			gp[:] = hyp
-			gp.update_model(True)
-		return gp
-
-	def _gp_regression (self, X, Y, kern, **kwargs):
-		return GPRegression(X, Y, kern)
-
-
-	"""
-	Save and load model
-	"""
-	def save (self, filename): # pragma: no cover
-		assert isinstance(filename, str)
-		# Filename ending
-		suffix = '.doepy'
-		lensuf = len(suffix)
-		if len(filename) <= lensuf or not filename[-lensuf:] == suffix:
-			filename += suffix
-
-		T, Z, active_dims, hyp = [], [], [], []
-		for e,gp in enumerate(self.gps):
-			x, z = gp.X, gp.Y
-			if self.transform:
-				x = self.input_transform(x, back=True)
-				z = self.output_transform(z, back=True, dim=e)
-			T.append(x)
-			Z.append(z)
-			hyp.append(gp[:])
-			active_dims.append(gp.kern.active_dims)
-
-		save_dict = {'T':T, 'Z':Z, 'active_dims':active_dims, 'hyp':hyp}
-		with open(filename,'wb') as f:
-			pickle.dump(save_dict, f, pickle.HIGHEST_PROTOCOL)
-
-	def load (self, filename, **kwargs): # pragma: no cover
-		assert isinstance(filename, str)
-		# Filename ending
-		suffix = '.doepy'
-		lensuf = len(suffix)
-		if len(filename) <= lensuf or not filename[-lensuf:] == suffix:
-			filename += suffix
-
-		assert isfile(filename)
-		with open(filename,'rb') as f:
-			load_dict = pickle.load(f)
-
-		T = load_dict['T']
-		Z = load_dict['Z']
-		hyp = load_dict['hyp']
-		active_dims = load_dict['active_dims']
-
-		self._train(T, Z, active_dims, hyp=hyp, **kwargs)
 
 	"""
 	State constraints
