@@ -58,7 +58,7 @@ def assert_not_none (variable, name='<variable_name>'):
     if variable is None:
         raise AssertionError('Variable %s is None'%name)
 
-def assert_is_type (variable, dtype, name='<variable_name>'):
+def assert_is_instance (variable, dtype, name='<variable_name>'):
     if not isinstance(variable, dtype):
         raise AssertionError('%s must be of type %s: %s'%(name, dtype, variable))
                     

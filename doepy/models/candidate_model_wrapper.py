@@ -24,7 +24,7 @@ SOFTWARE.
 
 import numpy as np 
 
-from ..utils import assert_is_type
+from ..utils import assert_is_instance
 
 class CandidateWrapper:
 	def __init__ (self, **kwargs):
@@ -34,7 +34,7 @@ class CandidateWrapper:
 		def assign_variable (name, dtype=None, default=None):
 			value = kwargs.get(name, None)
 			if not (value is None or dtype is None):
-				assert_is_type(value, dtype, name)
+				assert_is_instance(value, dtype, name)
 			setattr(self, name, value)
 
 		########################
