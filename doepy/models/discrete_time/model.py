@@ -27,10 +27,10 @@ from numpy.random import multivariate_normal as mvn
 
 from . import LatentStateDerivativeObject, MeasDerivativeObject
 
-from ..model import Model
+from ..statespacemodel import StateSpaceModel
 from ...utils import assert_symmetric_matrix, assert_is_shape
 
-class dtModel (Model):
+class dtModel (StateSpaceModel):
 	def __init__ (self, candidate_model):
 		"""
 		Model:
@@ -43,88 +43,7 @@ class dtModel (Model):
 			p   ~ N(p, p_covar)
 			u_k of dimension num_inputs
 		"""
-		if candidate_model.num_meas is None:
-			candidate_model.num_meas = candidate_model.H.shape[0]
 		super().__init__(candidate_model)
-
-		self.H = candidate_model.H
-		self.num_states = self.H.shape[1]
-
-		# Process noise
-		self.x_covar = candidate_model.x_covar
-		if self.x_covar is None:
-			self.x_covar = np.zeros(( self.num_states, self.num_states ))
-
-		# Initial states
-		self.x0       = candidate_model.x0
-		self.x0_covar = candidate_model.x0_covar
-		if self.x0_covar is None:
-			self.x0_covar = np.zeros(( self.num_states, self.num_states ))
-
-	"""
-	Measurement matrix
-	"""
-	@property
-	def H (self):
-		return self._H 
-	@H.setter
-	def H (self, H):
-		assert isinstance(H, np.ndarray)
-		assert H.ndim == 2
-		self._H = H.copy()
-
-	"""
-	Process noise covariance matrix
-	"""
-	@property
-	def x_covar (self):
-		return self._x_covar
-	@x_covar.setter
-	def x_covar (self, x_covar):
-		assert_symmetric_matrix(x_covar)
-		self._x_covar = x_covar.copy()
-
-	"""
-	Initial state mean
-	"""
-	@property
-	def x0 (self):
-		return self._x0 
-	@x0.setter
-	def x0 (self, x0):
-		assert_is_shape(x0, (self.num_states,))
-		self._x0 = x0.copy()
-
-	"""
-	Initial state covariance
-	"""
-	@property
-	def x0_covar (self):
-		return self._x0_covar 
-	@x0_covar.setter
-	def x0_covar (self, x0_covar):
-		if x0_covar is None:
-			x0_covar = np.zeros(( self.num_states, self.num_states ))
-		assert_symmetric_matrix(x0_covar)
-		self._x0_covar = x0_covar.copy()
-
-	"""
-	Latent state constraints
-	- For surrogate models that want to enforce state constraints in order
-	  not to deviate too far from training data.
-	"""
-	def initialise_x_constraints (self):
-		pass
-
-	def update_x_constraints (self, x, s, dxdU, dsdU, step=None):
-		pass
-
-	def get_x_constraints (self):
-		return None
-
-	def num_x_constraints (self):
-		return 0
-
 
 	"""
 	Function calls
