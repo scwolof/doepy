@@ -1,5 +1,3 @@
-from .derivative_object import LatentStateDerivativeObject, MeasDerivativeObject
-
 from .model import dtModel
 from .linearmodel import dtLinearModel
 from .nonlinearmodel import dtNonLinearModel

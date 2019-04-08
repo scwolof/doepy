@@ -26,9 +26,9 @@ from os.path import isfile
 import numpy as np 
 import pickle
 
-from . import LatentStateDerivativeObject
 from .model import dtModel
 from ..gpmodel import GPModel
+from .. import LatentStateDerivativeObject
 
 from ...utils import assert_not_none
 from ...training import generate_training_data

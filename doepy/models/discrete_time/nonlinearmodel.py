@@ -24,9 +24,10 @@ SOFTWARE.
 
 import numpy as np 
 
-from . import LatentStateDerivativeObject
 
 from .model import dtModel
+from .. import LatentStateDerivativeObject
+
 from ...utils import assert_not_none
 from ...approximate_inference import taylor_moment_match
 

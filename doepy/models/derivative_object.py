@@ -90,3 +90,24 @@ class DerivativeObject:
 			if d in do.__dict__:
 				t    = getattr(self,d)
 				t[n] = getattr(do,d)
+
+
+class LatentStateDerivativeObject (DerivativeObject):
+	def __init__ (self, model, num_test_points=None, Hessian=False):
+		d = {'num_out': model.num_states,
+		     'num_inputs': model.num_inputs,
+		     'num_param': model.num_param,
+		     'num_states': model.num_states,
+		     'covariance': True,
+		     'in_out_covariance':True,
+		     'num_test_points':num_test_points}
+		super().__init__(**d)
+
+
+class MeasDerivativeObject (DerivativeObject):
+	def __init__ (self, model, num_test_points=None):
+		d = {'num_out': model.num_meas,
+		     'num_states': model.num_states,
+		     'covariance': True,
+		     'num_test_points':num_test_points}
+		super().__init__(**d)
