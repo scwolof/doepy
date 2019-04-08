@@ -26,3 +26,11 @@ import numpy as np
 
 def squaremul (A, B):
     return np.einsum('ij,jk,kl->il', A, B, A.T)
+
+def tensor_eye ( num_dims, dim ):
+	# Identity matrix of shape [ dim ] * num_dims
+	D = [ dim ] * num_dims
+	I = np.zeros( D )
+	I[[np.arange(dim)] * num_dims ] = 1.
+	return I
+
