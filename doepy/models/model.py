@@ -53,8 +53,10 @@ class Model:
 
 		# Model parameters p
 		self.num_param = candidate_model.num_param
-		if not self.num_param is None:
-			assert isinstance(self.num_param, int) and self.num_param >= 0
+		if self.num_param is None:
+			self.num_param = 0
+		assert isinstance(self.num_param, int) and self.num_param >= 0
+
 		if not candidate_model.p_mean is None:
 			self.p_mean  = candidate_model.p_mean
 		if not candidate_model.p_covar is None:

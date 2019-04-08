@@ -73,7 +73,7 @@ class dtGPModel (dtModel, GPModel):
 			'return_active_dims':True}
 
 		# Model parameters
-		if self.num_param is not None and self.num_param > 0:
+		if self.num_param > 0:
 			assert 'p_bounds' in kwargs, 'Training requires parameter bounds'
 			dic['p_bounds'] = kwargs.get('p_bounds')
 		# Number of training data points
@@ -156,7 +156,7 @@ class dtGPModel (dtModel, GPModel):
 		tnew = np.array( xk.tolist() + u.tolist() )
 		nums = [ self.num_states, self.num_inputs ]  # List of no. of dims
 		Ss   = [Sk, self.u_covar]                    # List of covariances
-		if self.num_param is not None and self.num_param > 0:
+		if self.num_param > 0:
 			assert_not_none(self.p_mean, '%s:p_mean'%self.name)
 			assert_not_none(self.p_covar, '%s:p_covar'%self.name)
 			tnew  = np.concatenate(( tnew, self.p_mean ))
@@ -214,7 +214,7 @@ class dtGPModel (dtModel, GPModel):
 			do.dVdx = domm.dVdm[:D,:,:D]
 			do.dVdu = domm.dVdm[:D,:,D:dn]
 			do.dVds = domm.dVds[:D,:,:D,:D]
-			if self.num_param is not None and self.num_param > 0:
+			if self.num_param > 0:
 				P = self.num_param
 				do.dMdp = domm.dMdm[:,-P:]
 				do.dSdp = domm.dSdm[:,:,-P:]

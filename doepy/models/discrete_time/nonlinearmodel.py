@@ -60,10 +60,8 @@ class dtNonLinearModel (dtModel):
 	State prediction
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
-		has_param = self.num_param is not None and self.num_param > 0
-
 		inp = (xk, u)
-		if has_param:
+		if self.num_param > 0:
 			assert_not_none(self.p_mean, '%s:p_mean'%self.name)
 			assert_not_none(self.p_covar, '%s:p_covar'%self.name)
 			inp += (self.p_mean,)
@@ -76,7 +74,7 @@ class dtNonLinearModel (dtModel):
 			dMdxu = np.transpose( do.dMdxu, axes=[0,2,1] )
 			ux_u  = np.concatenate(( dMdxu, do.dMduu ), axis=2)
 			ddM   = np.concatenate(( x_xu, ux_u ), axis=1)
-			if has_param:
+			if self.num_param > 0:
 				xup = np.concatenate(( do.dMdxp, do.dMdup ), axis=1 )
 				ddM = np.concatenate(( ddM, xup ), axis=2 )
 				xup = np.transpose( xup, axes=[0,2,1] )
@@ -88,7 +86,7 @@ class dtNonLinearModel (dtModel):
 		dMdm = np.concatenate(( do.dMdx, do.dMdu ), axis=1)
 		dim  = [self.num_states, self.num_inputs]
 		Ss   = [Sk, self.u_covar]
-		if has_param:
+		if self.num_param > 0:
 			dMdm = np.concatenate(( dMdm, do.dMdp ), axis=1)
 			dim += [self.num_param,]
 			Ss  += [self.p_covar]
@@ -120,7 +118,7 @@ class dtNonLinearModel (dtModel):
 			do.dVdx = domm.dVdm[:D,:,:D]
 			do.dVdu = domm.dVdm[:D,:,D:dn]
 			do.dVds = domm.dVds[:D,:,:D,:D]
-			if has_param:
+			if self.num_param > 0:
 				P = self.num_param
 				do.dMdp = domm.dMdm[:,-P:]
 				do.dSdp = domm.dSdm[:,:,-P:]
