@@ -141,6 +141,12 @@ class Model:
 	def predict (self, *args, **kwargs):
 		return self.f(*args, **kwargs)
 
+	def predict_z_dist (self, *args, **kwargs):
+		"""
+		Return mean and covariance of p( z | f, u, u_covar, p, p_covar )
+		"""
+		raise NotImplementedError
+
 	def predict_y_dist (self, *args, **kwargs):
 		"""
 		Return mean and covariance of p( y | f, u, u_covar, p, p_covar )
