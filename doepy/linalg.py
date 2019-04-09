@@ -31,6 +31,5 @@ def tensor_eye ( num_dims, dim ):
 	# Identity matrix of shape [ dim ] * num_dims
 	D = [ dim ] * num_dims
 	I = np.zeros( D )
-	I[[np.arange(dim)] * num_dims ] = 1.
+	I[ (np.arange(dim),)*num_dims ] = 1.
 	return I
-
