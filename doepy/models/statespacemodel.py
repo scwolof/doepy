@@ -113,6 +113,51 @@ class StateSpaceModel (Model):
 		return 0
 
 	"""
+	Mean and covariance of input distribution
+	"""
+	def get_input_mean_and_cov (self, x, Sx, u, concatenate=False):
+		mean = ( x, u )
+		covs = ( Sx, self.u_covar )
+
+		if self.num_param > 0:
+			assert_not_none(self.p_mean, '%s:p_mean'%self.name)
+			assert_not_none(self.p_covar, '%s:p_covar'%self.name)
+			mean += ( self.p_mean, )
+			covs += ( self.p_covar, )
+
+		dims = np.cumsum([0] + [ len(m) for m in mean ])
+		if concatenate:
+			mean = np.concatenate( mean )
+
+		cov = np.zeros(( dims[-1], dims[-1] ))
+		for i,S in enumerate( covs ):
+			cov[ dims[i]:dims[i+1],dims[i]:dims[i+1] ] = S
+
+		return mean, cov
+
+	"""
+	Retrieve latent state deriv object from approx. infererence deriv object
+	"""
+	def get_latent_state_derivatives (self, domm):
+		do = LatentStateDerivativeObject(self)
+		D  = self.num_states
+		dn = D + self.num_inputs
+		do.dMdx = domm.dMdm[:,:D]
+		do.dMdu = domm.dMdm[:,D:dn]
+		do.dMds = domm.dMds[:,:D,:D]
+		do.dSdx = domm.dSdm[:,:,:D]
+		do.dSdu = domm.dSdm[:,:,D:dn]
+		do.dSds = domm.dSds[:,:,:D,:D]
+		do.dVdx = domm.dVdm[:D,:,:D]
+		do.dVdu = domm.dVdm[:D,:,D:dn]
+		do.dVds = domm.dVds[:D,:,:D,:D]
+		if self.num_param > 0:
+			do.dMdp = domm.dMdm[:,-self.num_param:]
+			do.dSdp = domm.dSdm[:,:,-self.num_param:]
+			do.dVdp = domm.dVdm[:,:,-self.num_param:]
+		return do
+
+	"""
 	Function calls
 	"""
 	def predict (self, x0, U, **kwargs):

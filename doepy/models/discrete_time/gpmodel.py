@@ -28,7 +28,6 @@ import pickle
 
 from .model import dtModel
 from ..gpmodel import GPModel
-from .. import LatentStateDerivativeObject
 
 from ...utils import assert_not_none
 from ...training import generate_training_data
@@ -147,39 +146,20 @@ class dtGPModel (dtModel, GPModel):
 	State prediction
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+		# Input mean and covariance
+		input_mean, input_cov = self.get_input_mean_and_cov(xk, Sk, u, True)
+
 		if self.transform:
 			assert_not_none(self.output_transform, 'output_transform')
 			assert_not_none(self.input_transform, 'input_transform')
-		assert not self.gps == [], 'GP surrogate(s) not trained yet.'
-
-		# Input mean
-		tnew = np.array( xk.tolist() + u.tolist() )
-		nums = [ self.num_states, self.num_inputs ]  # List of no. of dims
-		Ss   = [Sk, self.u_covar]                    # List of covariances
-		if self.num_param > 0:
-			assert_not_none(self.p_mean, '%s:p_mean'%self.name)
-			assert_not_none(self.p_covar, '%s:p_covar'%self.name)
-			tnew  = np.concatenate(( tnew, self.p_mean ))
-			nums += [ self.num_param ]
-			Ss   += [ self.p_covar ]
-
-		# Input variance
-		dim = len( tnew )
-		S_t = np.zeros(( dim, dim ))
-		Dss = np.cumsum( [0] + nums )
-		for i,Si in enumerate( Ss ):  # Fill block-diagonal matrix
-			i1, i2 = Dss[i], Dss[i+1]
-			S_t[i1:i2, i1:i2] = Si
-
-		if self.transform:
-			tnew = self.input_transform( tnew )
-			S_t  = self.input_transform.cov( S_t )
+			input_mean = self.input_transform( input_mean )
+			input_cov  = self.input_transform.cov( input_cov )
 
 		# Moment matching
-		res = self.moment_match(self.gps, tnew, S_t, grad=grad)
+		assert not self.gps == [], 'GP surrogate(s) not trained yet.'
+		res = self.moment_match(self.gps, input_mean, input_cov, grad=grad)
 		if grad:
-			M, S, V, domm = res
-			do = LatentStateDerivativeObject(self)
+			M, S, V, do = res
 		else:
 			M, S, V = res
 				
@@ -193,32 +173,17 @@ class dtGPModel (dtModel, GPModel):
 			if grad:
 				qtqt  = qt[:,None] * qt[None,:]
 				qzqz  = qz[:,None] * qz[None,:]
-				domm.dMdm *= qz[:,None] / qt[None,:]
-				domm.dMds *= qz[:,None,None] / qtqt[None,:,:]
-				domm.dSdm *= qzqz[:,:,None] / qt[None,None,:]
-				domm.dSds *= qzqz[:,:,None,None] / qtqt[None,None,:,:]
-				domm.dVdm *= qtqz[:,:,None] / qt[None,None,:]
-				domm.dVds *= qtqz[:,:,None,None] / qtqt[None,None,:,:]
+				do.dMdm *= qz[:,None] / qt[None,:]
+				do.dMds *= qz[:,None,None] / qtqt[None,:,:]
+				do.dSdm *= qzqz[:,:,None] / qt[None,None,:]
+				do.dSds *= qzqz[:,:,None,None] / qtqt[None,None,:,:]
+				do.dVdm *= qtqz[:,:,None] / qt[None,None,:]
+				do.dVds *= qtqz[:,:,None,None] / qtqt[None,None,:,:]
 
 		# Separate state and control dimensions again
 		V = V[:self.num_states]
 		if grad:
-			D  = self.num_states
-			dn = self.num_states + self.num_inputs
-			do.dMdx = domm.dMdm[:,:D]
-			do.dMdu = domm.dMdm[:,D:dn]
-			do.dMds = domm.dMds[:,:D,:D]
-			do.dSdx = domm.dSdm[:,:,:D]
-			do.dSdu = domm.dSdm[:,:,D:dn]
-			do.dSds = domm.dSds[:,:,:D,:D]
-			do.dVdx = domm.dVdm[:D,:,:D]
-			do.dVdu = domm.dVdm[:D,:,D:dn]
-			do.dVds = domm.dVds[:D,:,:D,:D]
-			if self.num_param > 0:
-				P = self.num_param
-				do.dMdp = domm.dMdm[:,-P:]
-				do.dSdp = domm.dSdm[:,:,-P:]
-				do.dVdp = domm.dVdm[:,:,-P:]
+			do = self.get_latent_state_derivatives(do)
 
 		# Process noise variance
 		S += self.x_covar
@@ -237,6 +202,4 @@ class dtGPModel (dtModel, GPModel):
 						do.dVds[d1,d2,d1,d2] += 1
 
 		ret = (M, S, V) if cross_cov else (M, S)
-		if grad:
-			ret += (do,)
-		return ret
+		return ret if not grad else ret+(do,)

@@ -26,7 +26,6 @@ import numpy as np
 
 
 from .model import dtModel
-from .. import LatentStateDerivativeObject
 
 from ...utils import assert_not_none
 from ...approximate_inference import taylor_moment_match
@@ -61,15 +60,19 @@ class dtNonLinearModel (dtModel):
 	State prediction
 	"""
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
-		inp = (xk, u)
+		# Input mean and covariance
+		input_mean, input_cov = self.get_input_mean_and_cov(xk, Sk, u)
+
+		M, do = self.f( *input_mean, grad=True )
+
+		# gradient d f / d input_mean
+		dMdm = ( do.dMdx, do.dMdu )
 		if self.num_param > 0:
-			assert_not_none(self.p_mean, '%s:p_mean'%self.name)
-			assert_not_none(self.p_covar, '%s:p_covar'%self.name)
-			inp += (self.p_mean,)
+			dMdm += ( do.dMdp, )
+		dMdm = np.concatenate( dMdm, axis=1)
 
-		M, do = self.f( *inp, grad=True )
-
-		if self.hessian:
+		if grad:
+			# Hessian
 			assert do.dMdx.ndim == 2, 'Number of test points must be None!'
 			x_xu  = np.concatenate(( do.dMdxx, do.dMdxu ), axis=2)
 			dMdxu = np.transpose( do.dMdxu, axes=[0,2,1] )
@@ -81,49 +84,12 @@ class dtNonLinearModel (dtModel):
 				xup = np.transpose( xup, axes=[0,2,1] )
 				xup = np.concatenate(( xup, do.dMdpp ), axis=2 )
 				ddM = np.concatenate(( ddM, xup ), axis=1 )
+			S, V, do = taylor_moment_match(input_cov, dMdm, ddM, True)
+			do = self.get_latent_state_derivatives(do)
 		else:
-			ddM = None
-
-		dMdm = np.concatenate(( do.dMdx, do.dMdu ), axis=1)
-		dim  = [self.num_states, self.num_inputs]
-		Ss   = [Sk, self.u_covar]
-		if self.num_param > 0:
-			dMdm = np.concatenate(( dMdm, do.dMdp ), axis=1)
-			dim += [self.num_param,]
-			Ss  += [self.p_covar]
-		Dss  = np.cumsum([0,] + dim)
-		Snew = np.zeros((Dss[-1], Dss[-1]))
-		for i,Si in enumerate( Ss ):
-			i1, i2 = Dss[i], Dss[i+1]
-			Snew[i1:i2, i1:i2] = Si
-
-		if grad:
-			S, V, domm = taylor_moment_match(Snew, dMdm, ddM, True)
-		else:
-			S, V = taylor_moment_match(Snew, dMdm)
+			S, V = taylor_moment_match(input_cov, dMdm)
 
 		S  += self.x_covar
 		V   = V[:self.num_states]
 		ret = (M, S, V) if cross_cov else (M, S)
-
-		if grad:
-			do = LatentStateDerivativeObject(self)
-			D  = self.num_states
-			dn = D + self.num_inputs
-			do.dMdx = domm.dMdm[:,:D]
-			do.dMdu = domm.dMdm[:,D:dn]
-			do.dMds = domm.dMds[:,:D,:D]
-			do.dSdx = domm.dSdm[:,:,:D]
-			do.dSdu = domm.dSdm[:,:,D:dn]
-			do.dSds = domm.dSds[:,:,:D,:D]
-			do.dVdx = domm.dVdm[:D,:,:D]
-			do.dVdu = domm.dVdm[:D,:,D:dn]
-			do.dVds = domm.dVds[:D,:,:D,:D]
-			if self.num_param > 0:
-				P = self.num_param
-				do.dMdp = domm.dMdm[:,-P:]
-				do.dSdp = domm.dSdm[:,:,-P:]
-				do.dVdp = domm.dVdm[:,:,-P:]
-			ret += (do,)
- 
-		return ret
+		return ret if not grad else ret+(do,)
