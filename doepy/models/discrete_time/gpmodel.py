@@ -22,9 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from os.path import isfile
-import numpy as np 
-import pickle
+import numpy as np
 
 from .model import dtModel
 from ..gpmodel import GPModel
