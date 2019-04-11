@@ -23,6 +23,7 @@ SOFTWARE.
 """
 
 import numpy as np
+from numpy.random import multivariate_normal as mvn
 
 from .model import Model
 from . import LatentStateDerivativeObject, MeasDerivativeObject
@@ -115,9 +116,13 @@ class StateSpaceModel (Model):
 	"""
 	Mean and covariance of input distribution
 	"""
-	def get_input_mean_and_cov (self, x, Sx, u, concatenate=False):
+	def get_input_mean_and_cov (self, x, S, u, concatenate=False):
+		assert_is_shape(x, (self.num_states,))
+		assert_is_shape(S, (self.num_states,self.num_states))
+		assert_is_shape(u, (self.num_inputs,))
+
 		mean = ( x, u )
-		covs = ( Sx, self.u_covar )
+		covs = ( S, self.u_covar )
 
 		if self.num_param > 0:
 			assert_not_none(self.p_mean, '%s:p_mean'%self.name)
@@ -154,7 +159,7 @@ class StateSpaceModel (Model):
 		if self.num_param > 0:
 			do.dMdp = domm.dMdm[:,-self.num_param:]
 			do.dSdp = domm.dSdm[:,:,-self.num_param:]
-			do.dVdp = domm.dVdm[:,:,-self.num_param:]
+			do.dVdp = domm.dVdm[:D,:,-self.num_param:]
 		return do
 
 	"""
@@ -214,13 +219,6 @@ class StateSpaceModel (Model):
 			X[k+1], Y[k] = self._sample(X[k], U[k])
 		return X, Y
 
-	def _sample (self, x, u):
-		us = mvn(u, self.u_covar)
-		xy = self.predict(x, us)
-		wk = mvn( np.zeros(self.num_states), self.x_covar )
-		vk = mvn( np.zeros(self.num_meas), self.y_covar )
-		return xy[0] + wk, xy[1] + vk
-
 	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False):
 		"""
 		Input state posterior mean xk and variance Sk, and controls U 
@@ -250,6 +248,10 @@ class StateSpaceModel (Model):
 			X[k], S[k], dok = self._predict_x_dist(X[k], S[k], U[k], grad=True)
 			do.insert(dok,k)
 		return X, S, do
+
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+		# Implemented in children classes
+		raise NotImplementedError
 
 	def predict_z_dist (self, x, s, grad=False):
 		"""
@@ -313,3 +315,86 @@ class StateSpaceModel (Model):
 		if grad:
 			return Y, S, do
 		return Y, S
+
+	def filter (self, yk, x, s):
+		"""
+		Input observation yk, prediction mean m and variance s 
+			p( x_k | y_{1 : k-1} ) = N( x, s )
+		Outputs state posterior mean xk and variance sk 
+			p( x_k | y_{1 : k} ) = N( xk, sk )
+
+		yk : [ (n), E ]
+		x  : [ (n), D ]
+		s  : [ (n), D, D ]
+		"""
+		assert yk.ndim == x.ndim
+
+		if yk.ndim == 1:
+			return self._filter(yk, x, s)
+
+		n = len(yk)
+		X = np.zeros(( n, self.num_states ))
+		S = np.zeros(( n, self.num_states, self.num_states ))
+		for k in range(n):
+			X[k], S[k] = self._filter(yk[k], x[k], s[k])
+		return X, S
+
+	def _filter (self, yk, x, s):
+		sH = np.matmul(s, self.H.T)
+		K  = np.matmul(sH, np.linalg.inv(np.matmul(self.H, sH) + self.y_covar))
+		xk = x + np.matmul(K, yk - np.matmul(self.H, x))
+		sk = s - np.matmul(K, sH.T)
+		return xk, sk
+
+	def predict_filter (self, Y, x0, x0_covar, U):
+		"""
+		Filter sequence, based on observations Y, controls U,
+		and with prediction p(x_1) ~ N(x0, x0_covar)
+
+		Y        : [ n, E ]       ( y_1, ..., y_n )
+		x0       : [ D, ]
+		x0_covar : [ D, D ]
+		U        : [ n, D_U ]     ( u_1, ..., u_{n-1} )
+
+		Outputs
+		x  : [ n+1, D ]       ( x_1, ..., x_n )
+		s  : [ n+1, D, D]
+		"""
+		n = len(Y)
+		x = np.zeros(( n, self.num_states ))
+		s = np.zeros(( n, self.num_states, self.num_states ))
+		M, S = x0, x0_covar
+		for k in range( n ):
+			x[k], s[k] = self._filter(Y[k], M, S)
+			if k < n-1:
+				M, S = self.predict_x_dist(x[k], s[k], U[k])
+		return x, s
+
+	def smooth (self, X, S, U):
+		"""
+		Iteratively smooths sequences X = [x_1, ..., x_n] and 
+		S = [S_1, ..., S_n] with controls U = [u_1, ..., u_n]
+		"""
+		n  = len(X)
+		Xs = np.zeros(( n, self.num_states ))
+		Ss = np.zeros(( n, self.num_states, self.num_states ))
+		Xs[-1] = X[-1]
+		Ss[-1] = S[-1]
+		for k in np.arange(1, n)[::-1]:
+		    Xs[k-1],Ss[k-1] = self._smooth(X[k-1], S[k-1], Xs[k], Ss[k], U[k-1])
+		return Xs, Ss
+
+	def _smooth (self, xk, Sk, xk1, Sk1, uk):
+		"""
+		Inputs xk, Sk, xk1, S_{k+1}, uk
+			p( x_k | y_{1:k} ) = N( xk, Sk )
+			p( x_{k+1} | y_{1:T}, uk ) = N( xk1, Sk1 )
+
+		Produces smoothed x_k, S_k
+			p( x_k | y_{1:T} ) = N( xs, Ss )
+		"""
+		m, S, V = self.predict_x_dist(xk, Sk, uk, cross_cov=True)
+		J  = np.matmul( V, np.linalg.inv(S) )
+		xs = xk + np.matmul( J, xk1 - m )
+		Ss = Sk + np.matmul( J, np.matmul( Sk1 - S, J.T ) )
+		return xs, Ss
