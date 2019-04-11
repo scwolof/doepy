@@ -26,7 +26,7 @@ import numpy as np
 
 from GPy.kern import RBF
 
-from . import DerivativeObject
+from . import Derivatives
 
 def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 	"""
@@ -50,11 +50,11 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 	    S     [ E x E ]  covariance V_{x,f}[ f(x) ]
 	    V     [ D x E ]  input-output covariance cov_{x,f}[ x, f(x) ]
 	    if grad, return DerivativeObject with:
-	    dMdm  [ E x D ]
+	    dMdx  [ E x D ]
 	    dMds  [ E x D x D ]
-	    dSdm  [ E x E x D ]
+	    dSdx  [ E x E x D ]
 	    dSds  [ E x E x D x D ]
-	    dVdm  [ D x E x D ]
+	    dVdx  [ D x E x D ]
 	    dVds  [ D x E x D x D ]
 
 	Code largely based on PILCO (Copyright (C) 2008-2013 by Marc Deisenroth, 
@@ -115,13 +115,13 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 			dbqdm   = bq[:,None] * is2LX
 			dbqds   = 0.5 * bq[:,None,None]*is2LX[:,:,None]*is2LX[:,None,:]
 			dcds    = -0.5 * np.matmul( np.linalg.inv(s2LI).T, iL )
-			do.dMdm[e] = c * np.sum( dbqdm, axis=0 )
+			do.dMdx[e] = c * np.sum( dbqdm, axis=0 )
 			do.dMds[e] = c * ( np.sum( dbqds, axis=0 ) + dcds * sumbq )
 
 		is2LXs2 = np.matmul(is2LX, s2.T)
 		V[:,e]  = c * np.sum( bq[:,None] * is2LXs2, axis=0 )
 		if grad:
-			do.dVdm[:,e] = 2 * np.matmul(s2, do.dMds[e])
+			do.dVdx[:,e] = 2 * np.matmul(s2, do.dMds[e])
 			do.dVds[:,e] =  dcds * V[:,e,None,None]
 			s2is2L = np.matmul(s2, is2L)
 			for d1 in range(D):
@@ -194,8 +194,8 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 								+ np.sum(np.matmul(B, zj[:,:d+1]), axis=0)
 					T[:d+1, d] = T[d,:d+1]
 				
-				r -= M[i]*do.dMdm[j] + M[j]*do.dMdm[i] 
-				do.dSdm[i,j], do.dSdm[j,i] = r.copy(), r.copy()
+				r -= M[i]*do.dMdx[j] + M[j]*do.dMdx[i] 
+				do.dSdx[i,j], do.dSdx[j,i] = r.copy(), r.copy()
 				T  = 0.5 * (isdR * T - S[i,j] * iR*(lengi + lengj)[:,None])
 				T -= M[i]*do.dMds[j] + M[j]*do.dMds[i] 
 				do.dSds[i,j], do.dSds[j,i] = T.copy(), T.copy()

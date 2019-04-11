@@ -25,7 +25,7 @@ SOFTWARE.
 import numpy as np 
 
 from .model import dtModel
-from .. import LatentStateDerivativeObject
+from ..derivatives import LatentStateDerivatives
 
 class dtLinearModel (dtModel):
 	def __init__ (self, candidate_model):
@@ -85,7 +85,7 @@ class dtLinearModel (dtModel):
 			return ret
 
 		# Compute gradients
-		do = LatentStateDerivativeObject(self)
+		do = LatentStateDerivatives(self)
 		do.dMdx = self.F.copy()
 		do.dMdu = self.B.copy()
 		do.dSds = np.zeros([self.num_states]*4)

@@ -24,9 +24,9 @@ SOFTWARE.
 
 import numpy as np
 
-from ..utils import assert_is_instance, assert_is_shape
+from .utils import assert_is_instance, assert_is_shape
 
-class DerivativeObject:
+class Derivatives:
 	def __init__ (self, num_out, num_inputs=None, num_param=None, num_states=None, 
 		num_test_points=None):
 
@@ -53,7 +53,7 @@ class DerivativeObject:
 		# Model parameter
 		if self.has_param:
 			self.p  = ( num_param, )
-			self.pp = ( num_param, )
+			self.pp = ( num_param, num_param )
 			if self.has_inputs:
 				self.up = ( num_inputs, num_param )
 
@@ -243,25 +243,3 @@ class DerivativeObject:
 	@dMdxu.setter
 	def dMdxu (self, value):
 		self._set_derivative('M', 'xu', value)
-
-
-
-
-class LatentStateDerivativeObject (DerivativeObject):
-	def __init__ (self, model, num_test_points=None):
-		d = {'num_out': model.num_states,
-		     'num_inputs': model.num_inputs,
-		     'num_param': model.num_param,
-		     'num_states': model.num_states,
-		     'num_test_points':num_test_points}
-		super().__init__(**d)
-
-
-
-
-class MeasDerivativeObject (DerivativeObject):
-	def __init__ (self, model, num_test_points=None):
-		d = {'num_out': model.num_meas,
-		     'num_states': model.num_states,
-		     'num_test_points':num_test_points}
-		super().__init__(**d)

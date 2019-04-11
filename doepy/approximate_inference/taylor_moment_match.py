@@ -40,18 +40,18 @@ def taylor_moment_match (s, dMdm, d2Mdm2=None, grad=False):
 	
 	# Gradients
 	do = DerivativeObject(D, E)
-	do.dMdm = dMdm.copy()
-	do.dVdm = np.einsum('ab,cbd->acd', s, d2Mdm2)
+	do.dMdx = dMdm.copy()
+	do.dVdx = np.einsum('ab,cbd->acd', s, d2Mdm2)
 	dsds    = np.eye(D)[:,None,:,None] * np.eye(D)[None,:,None,:]
 	do.dVds = np.einsum('abcd,eb->aecd', dsds, dMdm)
 	
 	for i in range(E):
-		do.dSdm[i,i] = 2*np.einsum('bc,bd,d->c',d2Mdm2[i],s,dMdm[i])
+		do.dSdx[i,i] = 2*np.einsum('bc,bd,d->c',d2Mdm2[i],s,dMdm[i])
 		do.dSds[i,i] = dMdm[i,:][:,None] * dMdm[i]
 		for j in range(i+1,E):
-			do.dSdm[i,j] += np.einsum('bc,bd,d->c', d2Mdm2[i], s, dMdm[j])
-			do.dSdm[i,j] += np.einsum('b,bd,dc->c', dMdm[i], s, d2Mdm2[j])
-			do.dSdm[j,i]  = do.dSdm[i,j]
+			do.dSdx[i,j] += np.einsum('bc,bd,d->c', d2Mdm2[i], s, dMdm[j])
+			do.dSdx[i,j] += np.einsum('b,bd,dc->c', dMdm[i], s, d2Mdm2[j])
+			do.dSdx[j,i]  = do.dSdx[i,j]
 			do.dSds[i,j]  = dMdm[i,:][:,None] * dMdm[j]
 			do.dSds[j,i]  = do.dSds[i,j].T
 			

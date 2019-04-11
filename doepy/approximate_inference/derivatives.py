@@ -24,13 +24,19 @@ SOFTWARE.
 
 import numpy as np
 
-class DerivativeObject:
+from ..derivatives import Derivatives as DerivativesCore
+
+class Derivatives (DerivativesCore):
 	def __init__ (self, num_input, num_target):
-		D = num_input
-		E = num_target
-		self.dMdm = np.zeros( (E, D) )       # output mean by input mean
-		self.dMds = np.zeros( (E, D, D) )    # output mean by input covariance
-		self.dSdm = np.zeros( (E, E, D) )    # output covariance by input mean
-		self.dSds = np.zeros( (E, E, D, D) ) # output covariance by input covar
-		self.dVdm = np.zeros( (D, E, D) )    # output covariance by input mean
-		self.dVds = np.zeros( (D, E, D, D) ) # output covariance by input covar
+		super().__init__(num_target, num_states=num_inputs)
+		"""
+		D - num_input
+		E - num_target
+
+		self.dMdx    ( (E, D) )       # output mean by input mean
+		self.dMds    ( (E, D, D) )    # output mean by input covariance
+		self.dSdx    ( (E, E, D) )    # output covariance by input mean
+		self.dSds    ( (E, E, D, D) ) # output covariance by input covar
+		self.dVdx    ( (D, E, D) )    # output covariance by input mean
+		self.dVds    ( (D, E, D, D) ) # output covariance by input covar
+		"""

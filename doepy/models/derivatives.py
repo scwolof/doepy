@@ -24,30 +24,22 @@ SOFTWARE.
 
 import numpy as np
 
-from . import DerivativeObject
-from .gp_derivatives import d_pred_d_x, d2_m_d_x2
-from .taylor_moment_match import taylor_moment_match
+from ..derivatives import Derivatives
 
-from pdb import set_trace as st
 
-def gp_taylor_moment_match (gps, m, s, grad=False):
-	E, D  = len(gps), len(m)
-	M, S  = np.zeros(E), np.zeros((E,E))
-	
-	for e, gp in enumerate(gps):
-		tmp    = gp.predict_noiseless(m[None,:])
-		M[e]   = tmp[0][0,0]
-		S[e,e] = tmp[1][0,0]
+class LatentStateDerivatives (Derivatives):
+	def __init__ (self, model, num_test_points=None):
+		d = {'num_out': model.num_states,
+		     'num_inputs': model.num_inputs,
+		     'num_param': model.num_param,
+		     'num_states': model.num_states,
+		     'num_test_points':num_test_points}
+		super().__init__(**d)
 
-	dMdm, dSdm = d_pred_d_x(gps, m, diag=True)
-	if not grad:
-		_S, V = taylor_moment_match(s, dMdm)
-		S    += _S
-		return M, S, V
 
-	ddM   = d2_m_d_x2(gps, m)
-	_S, V, do = taylor_moment_match(s, dMdm, ddM, True)
-	S       += _S
-	do.dSdx += dSdm
-
-	return M, S, V, do
+class MeasurementDerivatives (Derivatives):
+	def __init__ (self, model, num_test_points=None):
+		d = {'num_out': model.num_meas,
+		     'num_states': model.num_states,
+		     'num_test_points':num_test_points}
+		super().__init__(**d)

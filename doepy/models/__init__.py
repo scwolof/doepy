@@ -1,5 +1,4 @@
-from .derivative_object import (DerivativeObject, LatentStateDerivativeObject,
-	MeasDerivativeObject)
+from .derivatives import LatentStateDerivatives, MeasurementDerivatives
 
 from .model import Model
 from .statespacemodel import StateSpaceModel

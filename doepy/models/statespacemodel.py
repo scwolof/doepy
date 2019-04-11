@@ -26,7 +26,7 @@ import numpy as np
 from numpy.random import multivariate_normal as mvn
 
 from .model import Model
-from . import LatentStateDerivativeObject, MeasDerivativeObject
+from .derivatives import LatentStateDerivatives, MeasurementDerivatives
 from ..utils import assert_symmetric_matrix, assert_is_shape, assert_not_none
 
 class StateSpaceModel (Model):
@@ -144,7 +144,7 @@ class StateSpaceModel (Model):
 	Retrieve latent state deriv object from approx. infererence deriv object
 	"""
 	def get_latent_state_derivatives (self, domm):
-		do = LatentStateDerivativeObject(self)
+		do = LatentStateDerivatives(self)
 		D  = self.num_states
 		dn = D + self.num_inputs
 		do.dMdx = domm.dMdm[:,:D]
@@ -243,7 +243,7 @@ class StateSpaceModel (Model):
 				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
 			return X, S
 
-		do = LatentStateDerivativeObject(self, n=n)
+		do = LatentStateDerivatives(self, num_test_points=n)
 		for k in range(n):
 			X[k], S[k], dok = self._predict_x_dist(X[k], S[k], U[k], grad=True)
 			do.insert(dok,k)
@@ -274,7 +274,7 @@ class StateSpaceModel (Model):
 				Z[k], S[k] = self._predict_z_dist(x[k], s[k], grad=grad)
 			return Z, S
 
-		do = MeasDerivativeObject(self, n=n)
+		do = MeasurementDerivatives(self, n=n)
 		for k in range(n):
 			Z[k], S[k], dok = self._predict_y_dist(x[k], s[k], grad=True)
 			do.insert(dok,k)
@@ -285,7 +285,7 @@ class StateSpaceModel (Model):
 		S   = np.matmul(self.H, np.matmul(s, self.H.T) )
 		ret = (Z, S)
 		if grad:
-			do = MeasDerivativeObject(self)
+			do = MeasurementDerivatives(self)
 			do.dMdx = self.H
 			for e1 in range(  self.num_meas ):
 				for e2 in range(  self.num_meas ):
