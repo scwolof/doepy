@@ -98,3 +98,12 @@ class CandidateWrapper:
 		######################################
 		# Delta transition: f(x,u,p) = x + f_delta(x,u,p)
 		assign_variable('delta_transition', bool)
+
+
+		######################################
+		## Continuous-time state space models
+		######################################
+		# Time between measurements
+		assign_variable('step_length', float)
+		# Num time segments in [0, step_length] for ODE solver
+		assign_variable('time_steps', int)
