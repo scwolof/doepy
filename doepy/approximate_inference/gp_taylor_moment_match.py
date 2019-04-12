@@ -38,14 +38,12 @@ def gp_taylor_moment_match (gps, m, s, grad=False):
 		S[e,e] = tmp[1][0,0]
 
 	dMdm, dSdm = d_pred_d_x(gps, m, diag=True)
+	ddM        = None if not grad else d2_m_d_x2(gps, m)
+	_S, V, do  = taylor_moment_match(s, dMdm, ddM, grad)
+
+	S += _S
 	if not grad:
-		_S, V = taylor_moment_match(s, dMdm)
-		S    += _S
-		return M, S, V
+		M, S, V, None
 
-	ddM   = d2_m_d_x2(gps, m)
-	_S, V, do = taylor_moment_match(s, dMdm, ddM, True)
-	S       += _S
 	do.dSdx += dSdm
-
 	return M, S, V, do

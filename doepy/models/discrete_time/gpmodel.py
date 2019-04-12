@@ -155,11 +155,7 @@ class dtGPModel (dtModel, GPModel):
 
 		# Moment matching
 		assert not self.gps == [], 'GP surrogate(s) not trained yet.'
-		res = self.moment_match(self.gps, input_mean, input_cov, grad=grad)
-		if grad:
-			M, S, V, do = res
-		else:
-			M, S, V = res
+		M,S,V,do = self.moment_match(self.gps, input_mean, input_cov, grad=grad)
 				
 		# Transform back
 		if self.transform:

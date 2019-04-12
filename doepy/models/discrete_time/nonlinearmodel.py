@@ -24,7 +24,6 @@ SOFTWARE.
 
 import numpy as np 
 
-
 from .model import dtModel
 
 from ...utils import assert_not_none
@@ -34,27 +33,15 @@ class dtNonLinearModel (dtModel):
 	def __init__ (self, candidate_model):
 		"""
 		Transition function f is differentiable:
-		    g, dgdx, dgdu = f( x_k, u_k, grad=True )
-		    x_k   [ E ]
-		    u_k   [ D ]
-		    g     [ E ]
-		    dgdx  [ E x E ]
-		    dgdu  [ E x D ]
-
-		    if hessian: (STRONGLY RECOMMENDED)
-		    g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu = f( x_k, u_k, grad=True )
-		    ddgddx  [ E x E x E ]
-		    ddgddu  [ E x D x D ]
-		    ddgdxu  [ E x E x D ]
+		    g, do = f( x, u, p, grad=True )
+		    x   [ E ]
+		    u   [ D ]
+		    g   [ E ]
+		    do  DerivativeObject
 
 		    WARNING: NOT PROPERLY TESTED WITHOUT HESSIAN INFORMATION
 		"""
 		super().__init__(candidate_model)
-
-		if candidate_model.hessian is None:
-			self.hessian = False
-		else:
-			self.hessian = candidate_model.hessian
 
 	"""
 	State prediction
@@ -71,6 +58,7 @@ class dtNonLinearModel (dtModel):
 			dMdm += ( do.dMdp, )
 		dMdm = np.concatenate( dMdm, axis=1)
 
+		ddM = None
 		if grad:
 			# Hessian
 			assert do.dMdx.ndim == 2, 'Number of test points must be None!'
@@ -84,12 +72,13 @@ class dtNonLinearModel (dtModel):
 				xup = np.transpose( xup, axes=[0,2,1] )
 				xup = np.concatenate(( xup, do.dMdpp ), axis=2 )
 				ddM = np.concatenate(( ddM, xup ), axis=1 )
-			S, V, do = taylor_moment_match(input_cov, dMdm, ddM, True)
-			do = self.get_latent_state_derivatives(do)
-		else:
-			S, V = taylor_moment_match(input_cov, dMdm)
+
+		S, V, do = taylor_moment_match(input_cov, dMdm, ddM, grad)
 
 		S  += self.x_covar
 		V   = V[:self.num_states]
 		ret = (M, S, V) if cross_cov else (M, S)
-		return ret if not grad else ret+(do,)
+		if not grad:
+			return ret
+		do = self.get_latent_state_derivatives(do)
+		return ret+(do,)

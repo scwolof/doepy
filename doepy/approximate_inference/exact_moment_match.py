@@ -209,4 +209,4 @@ def exact_moment_match (gps, mu, s2, grad=False, independent=False):
 
 	if grad:
 		return M, S, V, do
-	return M, S, V
+	return M, S, V, None

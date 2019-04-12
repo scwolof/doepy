@@ -32,7 +32,7 @@ def taylor_moment_match (s, dMdm, d2Mdm2=None, grad=False):
 	S = np.matmul(dMdm, V)
 
 	if not grad:
-		return S, V
+		return S, V, None
 
 	if d2Mdm2 is None:
 		d2Mdm2 = np.zeros((E,D,D))
