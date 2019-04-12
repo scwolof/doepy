@@ -24,11 +24,9 @@ SOFTWARE.
 
 import numpy as np
 
-from . import DerivativeObject
+from .derivatives import Derivatives
 from .gp_derivatives import d_pred_d_x, d2_m_d_x2
 from .taylor_moment_match import taylor_moment_match
-
-from pdb import set_trace as st
 
 def gp_taylor_moment_match (gps, m, s, grad=False):
 	E, D  = len(gps), len(m)
