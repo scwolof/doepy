@@ -27,7 +27,7 @@ import numpy as np
 from ..derivatives import Derivatives as DerivativesCore
 
 class Derivatives (DerivativesCore):
-	def __init__ (self, num_input, num_target):
+	def __init__ (self, num_inputs, num_target):
 		super().__init__(num_target, num_states=num_inputs)
 		"""
 		D - num_input
