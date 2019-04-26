@@ -147,19 +147,19 @@ class StateSpaceModel (Model):
 		do = LatentStateDerivatives(self)
 		D  = self.num_states
 		dn = D + self.num_inputs
-		do.dMdx = domm.dMdm[:,:D]
-		do.dMdu = domm.dMdm[:,D:dn]
+		do.dMdx = domm.dMdx[:,:D]
+		do.dMdu = domm.dMdx[:,D:dn]
 		do.dMds = domm.dMds[:,:D,:D]
-		do.dSdx = domm.dSdm[:,:,:D]
-		do.dSdu = domm.dSdm[:,:,D:dn]
+		do.dSdx = domm.dSdx[:,:,:D]
+		do.dSdu = domm.dSdx[:,:,D:dn]
 		do.dSds = domm.dSds[:,:,:D,:D]
-		do.dVdx = domm.dVdm[:D,:,:D]
-		do.dVdu = domm.dVdm[:D,:,D:dn]
+		do.dVdx = domm.dVdx[:D,:,:D]
+		do.dVdu = domm.dVdx[:D,:,D:dn]
 		do.dVds = domm.dVds[:D,:,:D,:D]
 		if self.num_param > 0:
-			do.dMdp = domm.dMdm[:,-self.num_param:]
-			do.dSdp = domm.dSdm[:,:,-self.num_param:]
-			do.dVdp = domm.dVdm[:D,:,-self.num_param:]
+			do.dMdp = domm.dMdx[:,-self.num_param:]
+			do.dSdp = domm.dSdx[:,:,-self.num_param:]
+			do.dVdp = domm.dVdx[:D,:,-self.num_param:]
 		return do
 
 	"""
