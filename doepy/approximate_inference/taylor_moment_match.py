@@ -24,22 +24,22 @@ SOFTWARE.
 
 import numpy as np
 
-from . import DerivativeObject
+from .derivatives import Derivatives
 
 def taylor_moment_match (s, dMdm, d2Mdm2=None, grad=False):
 	E, D = dMdm.shape
-	V = np.matmul(s, dMdm.T)
-	S = np.matmul(dMdm, V)
+	V    = np.matmul(s, dMdm.T)
+	S    = np.matmul(dMdm, V)
+	do   = Derivatives(D, E)
 
 	if not grad:
-		return S, V, None
+		return S, V, do
 
 	if d2Mdm2 is None:
 		d2Mdm2 = np.zeros((E,D,D))
 		# TODO - more clever second derivative approximation?
 	
 	# Gradients
-	do = DerivativeObject(D, E)
 	do.dMdx = dMdm.copy()
 	do.dVdx = np.einsum('ab,cbd->acd', s, d2Mdm2)
 	dsds    = np.eye(D)[:,None,:,None] * np.eye(D)[None,:,None,:]
