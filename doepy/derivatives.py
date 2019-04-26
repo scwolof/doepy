@@ -40,10 +40,11 @@ class Derivatives:
 			self.M = ( num_test_points, ) + self.M
 		
 		# Predictive covariance
-		self.S = self.M + ( num_out, )
+		self.S = self.M + self.M
 
 		# Predictive input-output covariance
-		self.V = self.M + ( num_out, )
+		if self.has_states:
+			self.V = ( num_states, ) + self.M
 
 		# Control input
 		if self.has_inputs:
