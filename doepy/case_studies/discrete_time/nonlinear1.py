@@ -24,6 +24,8 @@ SOFTWARE.
 
 import numpy as np 
 
+from ...derivatives import Derivatives
+
 class Model:
 	def __init__ (self, name, num_states):
 		self.name = name
@@ -99,7 +101,13 @@ class M1 (Model):
 		ddgddu = np.zeros((3,2,2))
 		ddgdxu = np.zeros((3,3,2))
 		ddgdxu[2,1,1] = 1
-		return g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu
+		do = Derivatives(self.num_states, self.num_inputs, 0, self.num_states)
+		do.dMdx = dgdx
+		do.dMdu = dgdu
+		do.dMdxx = ddgddx
+		do.dMdxu = ddgdxu
+		do.dMduu = ddgddu
+		return g, do
 
 
 class M2 (Model):
@@ -128,7 +136,13 @@ class M2 (Model):
 		ddgddu = np.zeros((3,2,2))
 		ddgdxu = np.zeros((3,3,2))
 		ddgdxu[2,1,1] = 1
-		return g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu
+		do = Derivatives(self.num_states, self.num_inputs, 0, self.num_states)
+		do.dMdx = dgdx
+		do.dMdu = dgdu
+		do.dMdxx = ddgddx
+		do.dMdxu = ddgdxu
+		do.dMduu = ddgddu
+		return g, do
 
 
 class M3 (Model):
@@ -160,7 +174,13 @@ class M3 (Model):
 		ddgddu = np.zeros((4,2,2))
 		ddgdxu = np.zeros((4,4,2))
 		ddgdxu[2,1,1] = 1
-		return g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu
+		do = Derivatives(self.num_states, self.num_inputs, 0, self.num_states)
+		do.dMdx = dgdx
+		do.dMdu = dgdu
+		do.dMdxx = ddgddx
+		do.dMdxu = ddgdxu
+		do.dMduu = ddgddu
+		return g, do
 
 
 class M4 (Model):
@@ -196,8 +216,13 @@ class M4 (Model):
 		ddgdxu = np.zeros((4,4,2))
 		ddgdxu[2,1,1] =  1.
 		ddgdxu[3,0,0] = -1.
-		
-		return g, dgdx, dgdu, ddgddx, ddgddu, ddgdxu
+		do = Derivatives(self.num_states, self.num_inputs, 0, self.num_states)
+		do.dMdx = dgdx
+		do.dMdu = dgdu
+		do.dMdxx = ddgddx
+		do.dMdxu = ddgdxu
+		do.dMduu = ddgddu
+		return g, do
 
 
 class DataGen (M4):
