@@ -155,45 +155,287 @@ def generate_observations (f, X, U, active_dims, p_bounds=None):
     return Yt if p_bounds is None else (Pt, Yt)
 
 
-def combo_size ( combo, Ns ):
-    E = len( combo )
-    W = np.zeros( E, int )
-    for c,n in zip( combo, Ns ):
-        W[c] = np.max(( n, W[c] ))
-    return np.sum(W)
 
-def is_feasible_combo ( l, active_dims ):
-    E = len(active_dims)
-    assert len(l) == E
-    if E == 1:
-        return True
-    for i in range(1,E):
-        for j in range(i):
-            if l[i] == l[j]:
-                ai = active_dims[i]
-                aj = active_dims[j]
-                same_length = len(ai) == len(aj)
-                share_dim   = np.any([ a in aj for a in ai ])
-                if (not same_length) and share_dim:
+
+class TrainingDimensionsCombo:
+    def __init__ (self, combo):
+        # Combination of training target dimensions
+        self.y = combo
+        self.E = len(self.y)
+        # Combination of training input dimensions
+        self.x = None
+        # Number of required function evalutations
+        self.size = None
+        
+    def is_feasible (self, active_dims):
+        """
+        Given active_dims, is it possible to train the
+        target dimensions together according to self.y?
+        -> If True, will assign input combo to self.x
+        """
+        assert len( active_dims ) == self.E
+        if self.x is not None:
+            return True
+        
+        # Do we have more than one target dimension?
+        if self.E == 1:
+            self.x = [active_dims]
+            return True
+        
+        # Are active_dims obviously incompatible?
+        for i in range(1, self.E):
+            for j in range(i):
+                if self.y[i] == self.y[j]:
+                    ai = active_dims[i]
+                    aj = active_dims[j]
+                    same_length = len(ai) == len(aj)
+                    share_dim   = np.any([ a in aj for a in ai ])
+                    if (not same_length) and share_dim:
+                        return False
+        
+        # Can we construct feasible combination of input dimensions?
+        combo = []
+        for i in range( self.E ):
+            dims = [ active_dims[j] for j,c in enumerate(self.y) if c==i ]
+            if len(dims) > 0:
+                is_feasible, graph = self.is_feasible_combo( dims )
+                if not is_feasible:
                     return False
-    return True
+                combo.append(graph)
+                
+        self.x = combo
+        return True
+    
+    def is_feasible_combo ( self, dims ):
+        """
+        Try to construct self.x
+        """
+        D = [ len(d) for d in dims ]
+        if np.all( np.asarray(D)==D[0] ):
+            # All active_dims are of the same length
+            B, L = self.is_feasible_combo_equal_length(dims)
+            return B, [L]
+        else:
+            # There are active_dims in disjunct sets
+            return self.is_feasible_combo_disjunct(dims)
+                    
+    def is_feasible_combo_equal_length ( self, dims ):
+        """
+        All chosen active_dims in dims are of equal length
+        -> See if they can be combined
+        e.g. [ [1,2,3], [1,3,4], [1,4,5] ] -> [ 1, [2,4], [3,5] ]
+        """
+        N = len(dims)
+        D = len(dims[0])
 
-def find_unique_combos (num_sets):
-    assert isinstance(num_sets, int) and num_sets >= 1
-    lists = [[0]]
-    for nl in range(num_sets-1):
-        _lists = []
-        for l in lists:
-            _lists += [ l.copy()+[m] for m in range(np.max(l)+2) ]
-        lists = _lists.copy()
-    return lists
+        # Find all indices
+        indices = []
+        for l in dims:
+            for d in l:
+                if not d in indices:
+                    indices.append(d)
+        indices.sort()
 
-def find_feasible_combos ( active_dims ):
-    E     = len( active_dims )
-    lists = find_unique_combos( E )
-    return [ l for l in lists if is_feasible_combo(l, active_dims) ]
+        # Find all mutual indices
+        mutual = indices.copy()
+        remain = []
+        for d in indices:
+            for l in dims:
+                if not d in l:
+                    mutual.remove(d)
+                    if not d in remain:
+                        remain.append(d)
+                    break
 
-def find_smallest_combo ( active_dims, Ns ):
-    lists = find_feasible_combos( active_dims )
-    sizes = [ combo_size(combo, Ns) for combo in lists ]
-    return lists[ np.argmin(sizes) ]
+        if len(mutual) == D:
+            return True, mutual
+
+        remain.sort()
+        free_ind = np.arange(len(mutual), D).tolist()
+        Nf    = len(free_ind)
+        combo = mutual.copy()
+
+        combos = self.find_unique_combos(len(remain), Nf)
+        if Nf > 1:
+            combos = combos[1:]
+        for C in combos:
+            okay = True
+            inds = [ [remain[i] for i,c in enumerate(C) if c==j] for j in range(Nf) ]
+            for ind in inds:
+                if not self.includes_only_one( dims, ind ):
+                    okay = False
+                    break
+            if okay:
+                return True, combo + inds
+
+        return False, None
+    
+    def is_feasible_combo_disjunct ( self, dims ):
+        """
+        There are disjunct sets that we might be able to combine
+        e.g. [ [0,1], [2,3], [3,4] ] ->  [ [], [3, []] ]
+        """
+        # active_dims lengths
+        lengths = []
+        for d in dims:
+            leng = len(d)
+            if not leng in lengths:
+                lengths.append(leng)
+        lengths.sort()
+        
+        A = []
+        for l in lengths:
+            s = []
+            for d in dims:
+                if len(d) == l:
+                    s.append(d)
+            a = self.is_feasible_combo_equal_length(s)
+            if not a[0]:
+                return False, None
+            A.append(a[1])
+            
+        return True, A
+
+    def find_unique_combos ( self, num_sets, max_ind ):
+        """
+        Find all unique, ordered combinations of input dimensions
+        """
+        lists = [[0]]
+        for nl in range(num_sets-1):
+            _lists = []
+            for l in lists:
+                mind    = np.min((np.max(l)+2, max_ind))
+                _lists += [ l.copy()+[m] for m in range(int(mind)) ]
+            lists = _lists.copy()
+        return lists
+
+    def includes_only_one ( self, dims, inds ):
+        """
+        Make sure that each list in dims contains at
+        most one of the indices in the the inds list
+        """
+        for l in dims:
+            has_one = False
+            for i in inds:
+                if i in l:
+                    if has_one:
+                        return False
+                    has_one = True
+        return True
+        
+    def get_num_per_output (self, dim, Ns ):
+        n  = Ns[-1] if dim > len(Ns) else Ns[dim-1]
+        return n, n**dim
+    
+    def get_num_required_func_evals ( self, Ns ):
+        assert self.x is not None
+        func  = self._get_num_required_func_evals
+        return np.sum([ func(Ns, x) for x in self.x ])
+    
+    def _get_num_required_func_evals ( self, Ns, X ):
+        return np.max([ self.get_num_per_output(len(x),Ns)[1] for x in X ])
+            
+
+
+class TrainingDataGenerator:
+    def __init__ (self, active_dims, bounds,\
+                  num_data_points_per_num_dim=[101, 26, 10, 6, 4, 3]):
+        self.active_dims    = active_dims
+        self.bounds         = bounds
+        self.num_per_output = num_data_points_per_num_dim
+        self.num_dim        = int( 1 + np.max([ np.max(d) for d in self.active_dims ]) )
+        self._combo         = None
+        
+    def get_num_per_output (self, dim ):
+        Ns = self.num_per_output
+        n  = Ns[-1] if dim > len(Ns) else Ns[dim-1]
+        return n, n**dim
+
+    def find_smallest_combo ( self ):
+        """
+        Find combination of input dimensions that will result in the fewest
+        number of model evaluations to generate the training data set.
+        """
+        if self._combo is None:
+            # Find feasible combinations
+            lists = self.find_feasible_combos()
+            # Find smallest feasible combination
+            Ns  = self.num_per_output
+            ind = np.argmin([ l.get_num_required_func_evals(Ns) for l in lists])
+            # Combination of training dimensions
+            self._combo = lists[ ind ]
+        return self._combo
+
+    def find_feasible_combos ( self ):
+        """
+        Find feasible combinations of input dimensions
+        """
+        combos = self.find_unique_combos()
+        return [ c for c in combos if c.is_feasible( self.active_dims ) ]
+
+    def find_unique_combos ( self ):
+        """
+        Find all unique, ordered combinations of input dimensions
+        """
+        num_sets = len( self.active_dims )
+            
+        lists = [[0]]
+        for nl in range(num_sets-1):
+            _lists = []
+            for l in lists:
+                # [0]   -> [0,0], [0,1]
+                # [0,1] -> [0,1,0], [0,1,1], [0,1,2]
+                # etc
+                _lists += [ l.copy()+[m] for m in range( np.max(l)+2 ) ]
+            lists = _lists.copy()
+        lists = [ TrainingDimensionsCombo(l) for l in lists ]
+        return lists
+    
+    def grid_locations( self ):
+        combo = self.find_smallest_combo()
+        # Number of output sets
+        nout = len( combo.x )
+        # Number of input dimensions
+        nin  = self.bounds.shape[0]
+        # Number of training data points per dimension
+        Ns  = self.num_per_output
+        
+        X = []
+        for x in combo.x:
+            nx = combo._get_num_required_func_evals(Ns, x)
+            Xs = np.ones((nx,1)) * np.mean(self.bounds,axis=1)[None,:]
+            for dims in x:
+                xs = self._grid_locations_equal_dims(dims)
+                for c1 in dims:
+                    if isinstance(c1, int):
+                        c1 = [c1]
+                    for c2 in c1:
+                        Xs[:xs.shape[0],c1] = xs[:,c1]
+            X.append(Xs)
+        return X
+        
+    def _grid_locations_equal_dims (self, dims):
+        L  = len(dims)
+        n  = self.get_num_per_output(L)[0]
+        Z  = np.meshgrid(*[np.arange(n)]*L)
+        Z  = [ z.flatten() for z in Z ]
+        N  = len( Z[0] )
+        #Xs = np.mean(self.bounds,axis=1)[None,:] * np.ones((N,1))
+        Xs = np.zeros(( N, len(self.bounds) ))
+        for c1,z in zip(dims,Z):
+            if isinstance(c1,int):
+                c1 = [c1]
+            for c2 in c1:
+                zz = np.linspace(*self.bounds[c2], n)
+                Xs[:,c2] = np.array([zz[z1] for z1 in z])
+        return Xs
+    
+    def generate_observations (self, f, X=None):
+        if X is None:
+            X = self.grid_locations()
+        combo = self.find_smallest_combo()
+        # Need to separate into x, u (and add parameter values)
+        Y = [ np.array([ f(x) for x in Xs ]) for Xs in X ]
+        X = [ X[i] for i in combo.y ]
+        Y = [ Y[i][:,[j]] for j,i in enumerate(combo.y) ]
+        return X, Y
