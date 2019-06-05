@@ -26,6 +26,8 @@ import numpy as np
 from numpy.random import multivariate_normal as mvn
 
 from ..statespacemodel import StateSpaceModel
+from ...utils import assert_not_none
+from ...approximate_inference import taylor_moment_match
 
 class dtModel (StateSpaceModel):
 	def __init__ (self, candidate_model):
@@ -57,3 +59,43 @@ class dtModel (StateSpaceModel):
 		wk = mvn( np.zeros(self.num_states), self.x_covar )
 		vk = mvn( np.zeros(self.num_meas), self.y_covar )
 		return xy[0] + wk, xy[1] + vk
+
+	"""
+	State prediction
+	"""
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+		# Input mean and covariance
+		input_mean, input_cov = self.get_input_mean_and_cov(xk, Sk, u)
+
+		M, do = self.f( *input_mean, grad=True )
+
+		# gradient d f / d input_mean
+		dMdm = ( do.dMdx, do.dMdu )
+		if self.num_param > 0:
+			dMdm += ( do.dMdp, )
+		dMdm = np.concatenate( dMdm, axis=1)
+
+		ddM = None
+		if grad:
+			# Hessian
+			assert do.dMdx.ndim == 2, 'Number of test points must be None!'
+			x_xu  = np.concatenate(( do.dMdxx, do.dMdxu ), axis=2)
+			dMdxu = np.transpose( do.dMdxu, axes=[0,2,1] )
+			ux_u  = np.concatenate(( dMdxu, do.dMduu ), axis=2)
+			ddM   = np.concatenate(( x_xu, ux_u ), axis=1)
+			if self.num_param > 0:
+				xup = np.concatenate(( do.dMdxp, do.dMdup ), axis=1 )
+				ddM = np.concatenate(( ddM, xup ), axis=2 )
+				xup = np.transpose( xup, axes=[0,2,1] )
+				xup = np.concatenate(( xup, do.dMdpp ), axis=2 )
+				ddM = np.concatenate(( ddM, xup ), axis=1 )
+
+		S, V, do = taylor_moment_match(input_cov, dMdm, ddM, grad)
+
+		S  += self.x_covar
+		V   = V[:self.num_states]
+		ret = (M, S, V) if cross_cov else (M, S)
+		if not grad:
+			return ret
+		do = self.get_latent_state_derivatives(do)
+		return ret+(do,)
