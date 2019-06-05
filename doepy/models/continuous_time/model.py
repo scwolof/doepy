@@ -78,13 +78,16 @@ class ctModel (StateSpaceModel):
 		if do is None:
 			do = LatentStateDerivatives(self)
 			do.dMdx = np.eye(self.num_states)
-			do.dSds = np.eye(self.num_states)[:,None,:,None] \
-			          * np.eye(self.num_states)[None,:,None,:]
+			if grad:
+				do.dSds = np.eye(self.num_states)[:,None,:,None] \
+				          * np.eye(self.num_states)[None,:,None,:]
 		
 		# dMdx, dMdu, dMdp
 		xs += ( do.dMdx, do.dMdu )
 		if self.num_param > 0:
 			xs  += ( do.dMdp, )
+		if not grad:
+			return np.concatenate(xs, axis=1).T.flatten()
 		
 		# dMds, dSdx, dSdu, dSdp
 		xs += ( do.dMds.reshape(( self.num_states, -1 )),
@@ -105,8 +108,7 @@ class ctModel (StateSpaceModel):
 		#	X = np.concatenate(xs, axis=1)
 		#	return X.T.flatten()
 		
-		X = np.concatenate(xs, axis=1)
-		return X.T.flatten()
+		return np.concatenate(xs, axis=1).T.flatten()
 	
 	def _ode_vector_unmerge (self, X, grad=False):
 		# Mean x
@@ -118,20 +120,22 @@ class ctModel (StateSpaceModel):
 		
 		# dMdx, dMdu, dMdp
 		d += [self.num_states, self.num_inputs, self.num_param]
-		# dMds
-		d += [ self.num_states*self.num_states ]
-		# dSdx, dSdu, dSdp
-		d += [ self.num_states*self.num_states ]
-		d += [ self.num_states*self.num_inputs ]
-		d += [ self.num_states*self.num_param ]
-		# dSds
-		d += [ self.num_states*self.num_states*self.num_states ]
-		# dVdx, dVdu, dVdp
-		#d += [ self.num_states*self.num_states ]
-		#d += [ self.num_states*self.num_inputs ]
-		#d += [ self.num_states*self.num_param ]
-		# dVds
-		#d += [ self.num_states*self.num_states*self.num_states ]
+
+		if grad:
+			# dMds
+			d += [ self.num_states*self.num_states ]
+			# dSdx, dSdu, dSdp
+			d += [ self.num_states*self.num_states ]
+			d += [ self.num_states*self.num_inputs ]
+			d += [ self.num_states*self.num_param ]
+			# dSds
+			d += [ self.num_states*self.num_states*self.num_states ]
+			# dVdx, dVdu, dVdp
+			#d += [ self.num_states*self.num_states ]
+			#d += [ self.num_states*self.num_inputs ]
+			#d += [ self.num_states*self.num_param ]
+			# dVds
+			#d += [ self.num_states*self.num_states*self.num_states ]
 			
 		D = np.cumsum( d )
 		X = X.reshape((D[-1], self.num_states)).T
@@ -151,8 +155,10 @@ class ctModel (StateSpaceModel):
 		if self.num_param > 0:
 			do.dMdp = X[:,D[i]:D[i+1]]
 		i+= 1
+		if not grad:
+			return x, S, do
+
 		do.dMds = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-		
 		do.dSdx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
 		do.dSdu = X[:,D[i]:D[i+1]].reshape(Dx*2+(self.num_inputs,)); i+= 1
 		if self.num_param > 0:
@@ -168,6 +174,41 @@ class ctModel (StateSpaceModel):
 		#do.dVds = X[:,D[i]:D[i+1]].reshape(Dx*4); i+= 1
 		
 		return x, S, do # V, do
+
+	def _ode_moment_match (self, x, S, u, grad=False):
+		input_mean, _ = self.get_input_mean_and_cov(x, S, u)
+
+		dM, do = self.f( *input_mean, grad=True )
+
+		# gradient d f / d input_mean
+		dMdm = ( do.dMdx, do.dMdu )
+		if self.num_param > 0:
+			dMdm += ( do.dMdp, )
+		dMdm = np.concatenate( dMdm, axis=1)
+
+		domm = LatentStateDerivatives(self)
+		domm.dMdx = do.dMdx
+		domm.dMdu = do.dMdu
+		if self.num_param > 0:
+			domm.dMdp = do.dMdp
+
+		dS = self.x_covar + np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
+		if not grad:
+			return dM, dS, domm
+
+		I = np.eye(self.num_states)[:,None,:,None] \
+		    * np.eye(self.num_states)[None,:,None,:]
+		dSdx = np.einsum("kj,ijn->kin", S, do.dMdxx)
+		dSdu = np.einsum("kj,ijn->kin", S, do.dMdxu)
+		dSds = np.einsum('ij,jkmn->ikmn',do.dMdx,I)
+		domm.dSdx = dSdx + np.transpose(dSdx, [1,0,2])
+		domm.dSdu = dSdu + np.transpose(dSdu, [1,0,2])
+		domm.dSds = dSds + np.transpose(dSds, [1,0,3,2])
+		if self.num_param > 0:
+			dSdp      = np.einsum("kj,ijn->kin", S, do.dMdxp)
+			domm.dSdp = dSdp + np.transpose(dSdp, [1,0,2])
+
+		return dM, dS, domm
 
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		do = LatentStateDerivatives(self)
@@ -185,14 +226,14 @@ class ctModel (StateSpaceModel):
 		
 	def _x_dist_ode (self, t, X, U, grad=False):
 		x, S, do = self._ode_vector_unmerge(X, grad=grad)
-		
+
 		# Input
 		if not (isinstance(U, np.ndarray) or callable(U)):
 			raise ValueError('Control input not array or callable')
 		u = U if isinstance(U, np.ndarray) else U(t)
-		
+
 		x, S, domm = self._ode_moment_match(x, S, u, grad=grad)
-		
+
 		# Matrix multiplication
 		def mul (s1, s2):
 			a1, a2 = getattr(domm,s1), getattr(do,s2)
@@ -202,16 +243,17 @@ class ctModel (StateSpaceModel):
 			return np.einsum( '%s%s,%s%s->%s%s'%(t1,t2,t2,t3,t1,t3), a1, a2 )
 		
 		dMdx = mul( 'dMdx', 'dMdx' ) + mul( 'dMds', 'dSdx' )
-		dMds = mul( 'dMdx', 'dMds' ) + mul( 'dMds', 'dSds' )
 		dMdu = domm.dMdu + mul( 'dMdx', 'dMdu' ) + mul('dMds','dSdu')
 		if self.num_param > 0:
 			dMdp = domm.dMdp + mul('dMdx','dMdp') + mul('dMds','dSdp')
 		
-		dSdx = mul( 'dSdx', 'dMdx' ) + mul( 'dSds', 'dSdx' )
-		dSds = mul( 'dSdx', 'dMds' ) + mul( 'dSds', 'dSds' )
-		dSdu = domm.dSdu + mul( 'dSdx', 'dMdu' ) + mul( 'dSds', 'dSdu' )
-		if self.num_param > 0:
-			dSdp = domm.dSdp + mul( 'dSdx', 'dMdp' ) + mul( 'dSds', 'dSdp' )
+		if grad:
+			dMds = mul( 'dMdx', 'dMds' ) + mul( 'dMds', 'dSds' )
+			dSdx = mul( 'dSdx', 'dMdx' ) + mul( 'dSds', 'dSdx' )
+			dSds = mul( 'dSdx', 'dMds' ) + mul( 'dSds', 'dSds' )
+			dSdu = domm.dSdu + mul( 'dSdx', 'dMdu' ) + mul( 'dSds', 'dSdu' )
+			if self.num_param > 0:
+				dSdp = domm.dSdp + mul( 'dSdx', 'dMdp' ) + mul( 'dSds', 'dSdp' )
 		
 		#dVdx = mul( 'dVdx', 'dMdx' ) + mul( 'dVds', 'dSdx' )
 		#dVds = mul( 'dVdx', 'dMds' ) + mul( 'dVds', 'dSds' )
@@ -220,18 +262,21 @@ class ctModel (StateSpaceModel):
 		#	dVdp = domm.dVdp + mul( 'dVdx', 'dMdp' ) + mul( 'dVds', 'dSdp' )
 		
 		do.dMdx = dMdx
-		do.dMds = dMds
 		do.dMdu = dMdu
-		do.dSdx = dSdx
-		do.dSds = dSds
-		do.dSdu = dSdu
-		#do.dVdx = dVdx
-		#do.dVds = dVds
-		#do.dVdu = dVdu
 		if self.num_param > 0:
 			do.dMdp = dMdp
-			do.dSdp = dSdp
-			#do.dVdp = dVdp
+		if grad:
+			do.dMds = dMds
+			do.dSdx = dSdx
+			do.dSds = dSds
+			do.dSdu = dSdu
+			#do.dVdx = dVdx
+			#do.dVds = dVds
+			#do.dVdu = dVdu
+			if self.num_param > 0:
+				#do.dMdp = dMdp
+				do.dSdp = dSdp
+				#do.dVdp = dVdp
 		
 		# Total
 		return self._ode_vector_merge(x, S, do, grad=grad)
