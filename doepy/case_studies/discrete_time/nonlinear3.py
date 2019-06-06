@@ -1,26 +1,3 @@
-"""
-MIT License
-
-Copyright (c) 2019 Simon Olofsson
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-"""
 
 import numpy as np
 from scipy.stats import norm
@@ -32,17 +9,15 @@ class Model:
 
         self.num_inputs = 1
         self.num_states = num_states
-        self.num_meas   = 2
+        self.num_meas   = 1
 
         # Observation matrix
         self.H = np.zeros((self.num_meas, self.num_states))
         self.H[0,0] = 1
-        self.H[1,1] = 1
-
+        
         # Process noise covariance
         self.Q      = 1e-6 * np.eye(self.num_states)
-        self.Q[0,2] = 1e-7
-        self.Q[2,0] = 1e-7
+        
 
         # Measurement noise covariance
         self.R   = 2e-4 * np.eye(self.num_meas)
@@ -50,24 +25,21 @@ class Model:
         self.S_u = 1e-6 * np.eye(self.num_inputs)
         
         # Initial parameter guess
-        self.p0 = [0.2, 0.1, 0.01]
+        self.p0 = [0.2]
         
 
         # Initial latent state
         self.x0    = np.zeros(self.num_states)
-        self.x0[0] = 1
-        self.x0[2] = 0.01
-
+        
         # Initial latent state covariance
         self.S_x0      = np.zeros((self.num_states, self.num_states))
-        self.S_x0[0,0] = 1e-4
-        self.S_x0[2,2] = 1e-6
+        
         
         # Control and latent state bounds
         self.u_bounds = np.array([[0., 0.1]])
         self.u_delta  = [ 0.01 ]
-        self.x_bounds = np.array([[0.,2.],[0.,3.],[0.,5.]])
-        self.z_bounds = np.array([[-0.1, 2.],[-0.1, 3.]])
+        self.x_bounds = np.array([0.,2.])
+        self.z_bounds = np.array([-0.1, 2.])
 
     def __call__ (self, x, u, p, grad=False):
     	# Transition function
@@ -113,45 +85,32 @@ class M1 (Model):
         super().__init__('M1',3)
 
     def change (self, x, u, p, grad=False):
-        S, A, V    = x
-        k1, k2, k3 = p
-        dS = -k1*S*V + u[0]
-        dA =  k2*S*V
-        dV =  k1*S*V - k3*A*V
-        g = np.array([dS, dA, dV])
+        S = x
+        k1 = p
+        dS = -k1*S^2 + u[0]
+      
+        g = np.array([dS])
         if not grad:
             return g
         # dgdx
-        dgdx    = np.zeros((3,3))
-        dgdx[0] = np.array([-k1*V, 0, -k1*S])
-        dgdx[1] = np.array([k2*V, 0, k2*S])
-        dgdx[2] = np.array([k1*V, -k3*V, k1*S-k3*A])
+        dgdx    = np.zeros((1,1))
+        dgdx[0] = np.array([-2*k1*S])
         # dgdu
-        dgdu    = np.zeros((3,1))
+        dgdu    = np.zeros((1,1))
         dgdu[0,0] = 1.0
         # dgdp
-        dgdp = np.zeros((3,3))
-        dgdp[0] = np.array([-S*V, 0, 0])
-        dgdp[1] = np.array([0, S*V, 0])
-        dgdp[2] = np.array([S*V, 0, -A])
-        #dgdp[0] = np.array([])
+        dgdp = np.zeros((1,1))
+        dgdp[0] = np.array([-S*S])
         # ddgddx
-        ddgddx = np.zeros((3,3,3))
-        ddgddx[0,2,0] = -k1 
-        ddgddx[1,2,0] = k2
-        ddgddx[2,2,0] = k1
-        ddgddx[2,2,1] = -k3
-        ddgddx[0,0,2] = -k1
-        ddgddx[1,0,2] = k2
-        ddgddx[2,0,2] = k1
-        ddgddx[2,1,2] = -k3
+        ddgddx = np.zeros((1,1,1))
+        ddgddx[0,0,0] = -2*k1 
+                
+        ddgddu = np.zeros((1,1,1))
+        ddgdxu = np.zeros((1,1,1))
         
-        ddgddu = np.zeros((3,1,1))
-        ddgdxu = np.zeros((3,3,1))
-        
-        dgddp = np.zeros((3,3,3))
-        dgdup = np.zeros((3,1,3))
-        dgdxp = np.zeros((3,3,3))
+        dgddp = np.zeros((1,1,1))
+        dgdup = np.zeros((1,1,1))
+        dgdxp = np.zeros((1,1,1))
         
         dgdxp[0,0,0] = -V
         dgdxp[0,2,0] = -S
