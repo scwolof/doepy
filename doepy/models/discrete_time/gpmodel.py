@@ -90,56 +90,6 @@ class dtGPModel (dtModel, GPModel):
 
 		self._train(T, Z, active_dims, noise_var, hyp=hyp, **kwargs)
 
-
-	"""
-	State constraints
-	"""
-	def initialise_x_constraints (self):
-		# Find maximum lengthscales
-		hyp = np.zeros((self.num_states, self.num_states))
-		for e,gp in enumerate(self.gps):
-			L = gp.kern.lengthscale
-			A = gp.kern.active_dims
-			A = A[ A<self.num_states ]
-			for a,l in zip(A,L):
-				hyp[e,a] = self.input_transform(l, back=True, dim=e)
-		hyp = np.max(hyp,axis=0)
-
-		# Find min distances in training data
-		Xt = np.vstack([ gp.X for gp in self.gps ])
-		Xt = self.input_transform(Xt, back=True)[:,:self.num_states]
-		Xt = np.abs(Xt[1:] - Xt[:-1])
-		Xt = np.min( np.where(Xt>0, Xt, np.inf), axis=0 )
-
-		# We can allow a little bit of slack in latent states
-		slack  = Xt / np.where(hyp>0, hyp, 100.)
-		bounds = self.x_bounds + np.c_[-slack, slack]
-
-		self.x_constraints = ConstantMeanStateConstraint(bounds)
-		self.c, self.dcdU  = None, None
-
-	def update_x_constraints (self, x, s, dxdU, dsdU, step=None):
-		if self.x_constraints is None:
-			self.initialise_x_constraints()
-		c, dcdx, dcds = self.x_constraints(x, s, grad=True)
-		dcdU = np.einsum('ij,njk->ink',dcdx,dxdU) \
-			   + np.einsum('ijk,njkd->ind',dcds,dsdU)
-		if self.c is None:
-			self.c    = c[None,:]
-			self.dcdU = dcdU[None,:]
-		else:
-			self.c    = np.vstack((self.c, c))
-			self.dcdU = np.vstack((self.dcdU, dcdU[None,:]))
-
-	def get_x_constraints (self):
-		if self.x_constraints is None:
-			return None
-		i,j,k,l = self.dcdU.shape
-		return self.c.reshape((i*j)), self.dcdU.reshape((i*j,k,l))
-
-	def num_x_constraints (self):
-		return 2 * self.num_states
-
 	"""
 	State prediction
 	"""
