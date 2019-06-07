@@ -24,6 +24,7 @@ SOFTWARE.
 
 import numpy as np
 from numpy.random import multivariate_normal as mvn
+from scipy.linalg import block_diag
 
 from .model import Model
 from .derivatives import LatentStateDerivatives, MeasurementDerivatives
@@ -130,20 +131,16 @@ class StateSpaceModel (Model):
 			mean += ( self.p_mean, )
 			covs += ( self.p_covar, )
 
-		dims = np.cumsum([0] + [ len(m) for m in mean ])
 		if concatenate:
 			mean = np.concatenate( mean )
-
-		cov = np.zeros(( dims[-1], dims[-1] ))
-		for i,S in enumerate( covs ):
-			cov[ dims[i]:dims[i+1],dims[i]:dims[i+1] ] = S
+		cov = block_diag(*covs)
 
 		return mean, cov
 
 	"""
 	Retrieve latent state deriv object from approx. infererence deriv object
 	"""
-	def get_latent_state_derivatives (self, domm):
+	def get_latent_state_derivatives (self, domm, cross_cov=True, hessian=False):
 		do = LatentStateDerivatives(self)
 		D  = self.num_states
 		dn = D + self.num_inputs
@@ -153,13 +150,24 @@ class StateSpaceModel (Model):
 		do.dSdx = domm.dSdx[:,:,:D]
 		do.dSdu = domm.dSdx[:,:,D:dn]
 		do.dSds = domm.dSds[:,:,:D,:D]
-		do.dVdx = domm.dVdx[:D,:,:D]
-		do.dVdu = domm.dVdx[:D,:,D:dn]
-		do.dVds = domm.dVds[:D,:,:D,:D]
+		if cross_cov:
+			do.dVdx = domm.dVdx[:D,:,:D]
+			do.dVdu = domm.dVdx[:D,:,D:dn]
+			do.dVds = domm.dVds[:D,:,:D,:D]
 		if self.num_param > 0:
-			do.dMdp = domm.dMdx[:,-self.num_param:]
-			do.dSdp = domm.dSdx[:,:,-self.num_param:]
-			do.dVdp = domm.dVdx[:D,:,-self.num_param:]
+			do.dMdp = domm.dMdx[:,dn:]
+			do.dSdp = domm.dSdx[:,:,dn:]
+			if cross_cov:
+				do.dVdp = domm.dVdx[:D,:,dn:]
+		if not hessian:
+			return do
+		do.dMdxx = domm.dMdxx[:,:D,:D]
+		do.dMdxu = domm.dMdxx[:,:D,D:dn]
+		do.dMduu = domm.dMdxx[:,D:dn,D:dn]
+		if self.num_param > 0:
+			do.dMdxp = domm.dMdxx[:,:D,dn:]
+			do.dMdup = domm.dMdxx[:,D:dn,dn:]
+			do.dMdpp = domm.dMdxx[:,dn:,dn:]
 		return do
 
 	"""
