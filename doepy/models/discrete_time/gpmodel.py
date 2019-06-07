@@ -117,11 +117,11 @@ class dtGPModel (dtModel, GPModel):
 			if grad:
 				qtqt  = qt[:,None] * qt[None,:]
 				qzqz  = qz[:,None] * qz[None,:]
-				do.dMdm *= qz[:,None] / qt[None,:]
+				do.dMdx *= qz[:,None] / qt[None,:]
 				do.dMds *= qz[:,None,None] / qtqt[None,:,:]
-				do.dSdm *= qzqz[:,:,None] / qt[None,None,:]
+				do.dSdx *= qzqz[:,:,None] / qt[None,None,:]
 				do.dSds *= qzqz[:,:,None,None] / qtqt[None,None,:,:]
-				do.dVdm *= qtqz[:,:,None] / qt[None,None,:]
+				do.dVdx *= qtqz[:,:,None] / qt[None,None,:]
 				do.dVds *= qtqz[:,:,None,None] / qtqt[None,None,:,:]
 
 		# Separate state and control dimensions again
