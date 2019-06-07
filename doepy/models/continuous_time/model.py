@@ -68,12 +68,8 @@ class ctModel (StateSpaceModel):
 		assert_is_shape(x, (self.num_states,))
 		assert_is_shape(S, (self.num_states, self.num_states))
 		
-		#if V is None:
-		#	V = np.zeros(( self.num_states, self.num_states ))
-		#assert_is_shape(V, (self.num_states, self.num_states))
-		
 		# Mean, covariance and input-output covariance
-		xs = ( x[:,None], S ) #, V )
+		xs = ( x[:,None], S )
 		
 		if do is None:
 			do = LatentStateDerivatives(self)
@@ -95,18 +91,22 @@ class ctModel (StateSpaceModel):
 				do.dSdu.reshape(( self.num_states, -1 )) )
 		if self.num_param > 0:
 			xs  += ( do.dSdp.reshape(( self.num_states, -1 )), )
-		
-		# dSds, dVdx, dVdu, dVdp, dVds
+		# dSds
 		xs += ( do.dSds.reshape(( self.num_states, -1 )), )
-		#		do.dVdx.reshape(( self.num_states, -1 )),
-		#		do.dVdu.reshape(( self.num_states, -1 )) )
-		#if self.num_param > 0:
-		#	xs  += ( do.dVdp.reshape(( self.num_states, -1 )), )
-		#xs += ( do.dVds.reshape(( self.num_states, -1 )), )
-		
-		#if not grad:
-		#	X = np.concatenate(xs, axis=1)
-		#	return X.T.flatten()
+
+		# dMdxx
+		xs += ( do.dMdxx.reshape(( self.num_states, -1 )), )
+		# dMdxu
+		xs += ( do.dMdxu.reshape(( self.num_states, -1 )), )
+		# dMduu
+		xs += ( do.dMduu.reshape(( self.num_states, -1 )), )
+		if self.num_param > 0:
+			# dMdxp
+			xs += ( do.dMdxp.reshape(( self.num_states, -1 )), )
+			# dMdup
+			xs += ( do.dMdup.reshape(( self.num_states, -1 )), )
+			# dMdpp
+			xs += ( do.dMdpp.reshape(( self.num_states, -1 )), )
 		
 		return np.concatenate(xs, axis=1).T.flatten()
 	
@@ -115,8 +115,6 @@ class ctModel (StateSpaceModel):
 		d = [1]
 		# Covariance S
 		d += [ self.num_states ]
-		# Input-output covariance V
-		#d += [ self.num_states ]
 		
 		# dMdx, dMdu, dMdp
 		d += [self.num_states, self.num_inputs, self.num_param]
@@ -130,12 +128,15 @@ class ctModel (StateSpaceModel):
 			d += [ self.num_states*self.num_param ]
 			# dSds
 			d += [ self.num_states*self.num_states*self.num_states ]
-			# dVdx, dVdu, dVdp
-			#d += [ self.num_states*self.num_states ]
-			#d += [ self.num_states*self.num_inputs ]
-			#d += [ self.num_states*self.num_param ]
-			# dVds
-			#d += [ self.num_states*self.num_states*self.num_states ]
+			# dMdxx, dMdxu, dMduu
+			d += [ self.num_states*self.num_states ]
+			d += [ self.num_states*self.num_inputs ]
+			d += [ self.num_inputs*self.num_inputs ]
+			if self.num_param > 0:
+				# dMdxp, dMdup, dMdpp
+				d += [ self.num_states*self.num_param ]
+				d += [ self.num_inputs*self.num_param ]
+				d += [ self.num_param*self.num_param ]
 			
 		D = np.cumsum( d )
 		X = X.reshape((D[-1], self.num_states)).T
@@ -143,7 +144,6 @@ class ctModel (StateSpaceModel):
 		x = X[:,0];
 		i = 0
 		S = X[:,D[i]:D[i+1]]; i+= 1
-		#V = X[:,D[i]:D[i+1]]; i+= 1
 		
 		do = LatentStateDerivatives(self)
 		Dx = (self.num_states,)
@@ -165,52 +165,40 @@ class ctModel (StateSpaceModel):
 			do.dSdp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp)
 		i+= 1
 		do.dSds = X[:,D[i]:D[i+1]].reshape(Dx*4); i+= 1
+
+		do.dMdxx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
+		do.dMdxu = X[:,D[i]:D[i+1]].reshape(Dx*2+Du); i+= 1
+		do.dMduu = X[:,D[i]:D[i+1]].reshape(Dx+Du*2); i+= 1
+		if self.num_param > 0: 
+			do.dMdxp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp); i+= 1
+			do.dMdup = X[:,D[i]:D[i+1]].reshape(Dx+Du+Dp); i+= 1
+			do.dMdpp = X[:,D[i]:D[i+1]].reshape(Dx+Dp*2); i+= 1
 		
-		#do.dVdx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-		#do.dVdu = X[:,D[i]:D[i+1]].reshape(Dx*2+Du); i+= 1
-		#if self.num_param > 0:
-		#	do.dVdp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp)
-		#i+= 1
-		#do.dVds = X[:,D[i]:D[i+1]].reshape(Dx*4); i+= 1
-		
-		return x, S, do # V, do
+		return x, S, do
 
 	def _ode_moment_match (self, x, S, u, grad=False):
 		input_mean, _ = self.get_input_mean_and_cov(x, S, u)
 
 		dM, do = self.f( *input_mean, grad=True )
-
-		# gradient d f / d input_mean
-		dMdm = ( do.dMdx, do.dMdu )
-		if self.num_param > 0:
-			dMdm += ( do.dMdp, )
-		dMdm = np.concatenate( dMdm, axis=1)
-
-		domm = LatentStateDerivatives(self)
-		domm.dMdx = do.dMdx
-		domm.dMdu = do.dMdu
-		if self.num_param > 0:
-			domm.dMdp = do.dMdp
-
-		dS = self.x_covar + np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
+		dS     = self.x_covar + np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
 		if not grad:
-			return dM, dS, domm
+			return dM, dS, do
 
 		I = np.eye(self.num_states)[:,None,:,None] \
 		    * np.eye(self.num_states)[None,:,None,:]
-		dSdx = np.einsum("kj,ijn->kin", S, do.dMdxx)
-		dSdu = np.einsum("kj,ijn->kin", S, do.dMdxu)
-		dSds = np.einsum('ij,jkmn->ikmn',do.dMdx,I)
-		domm.dSdx = dSdx + np.transpose(dSdx, [1,0,2])
-		domm.dSdu = dSdu + np.transpose(dSdu, [1,0,2])
-		domm.dSds = dSds + np.transpose(dSds, [1,0,3,2])
+		do.dSdx  = np.einsum("kj,ijn->kin", S, do.dMdxx)
+		do.dSdx += np.transpose(do.dSdx, [1,0,2])
+		do.dSdu  = np.einsum("kj,ijn->kin", S, do.dMdxu)
+		do.dSdu += np.transpose(do.dSdu, [1,0,2])
+		do.dSds  = np.einsum('ij,jkmn->ikmn',do.dMdx,I)
+		do.dSds += np.transpose(do.dSds, [1,0,3,2])
 		if self.num_param > 0:
-			dSdp      = np.einsum("kj,ijn->kin", S, do.dMdxp)
-			domm.dSdp = dSdp + np.transpose(dSdp, [1,0,2])
+			do.dSdp  = np.einsum("kj,ijn->kin", S, do.dMdxp)
+			do.dSdp += np.transpose(do.dSdp, [1,0,2])
 
-		return dM, dS, domm
+		return dM, dS, do
 
-	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, grad=False):
 		do = LatentStateDerivatives(self)
 		X = self._ode_vector_merge(xk, Sk, grad=grad)
 		T = self._get_time_steps()
@@ -220,9 +208,45 @@ class ctModel (StateSpaceModel):
 		S += np.matmul( do.dMdu, np.matmul(self.u_covar, do.dMdu.T) )
 		if self.num_param > 0:
 			S += np.matmul( do.dMdp, np.matmul(self.p_covar, do.dMdp.T) )
-		#ret = (M, S, V) if cross_cov else (M, S)
-		ret = (M, S, None) if cross_cov else (M, S)
-		return ret if not grad else ret+(do,)
+
+		if grad:
+			# Matrix multiplication
+			def mul (s1, s2, i, j=None):
+				reverse = len(s2) > len(s1)
+				if reverse:
+					s1, s2 = s2, s1
+				a1 = getattr(do, s1)
+				a2 = getattr(do, s2)
+				S  = getattr(self, '%s_covar'%s2[-1])
+				o  = 'ab' if s1[-1] == s2[-1] else 'ba'
+				j  = i if j is None else j
+				if reverse:
+					return np.einsum('c,cb,%s->a'%o, a2[i], S, a1[j])
+				return np.einsum('%s,bc,c->a'%o, a1[i], S, a2[j])
+
+			def mul2 (s1, s2, i, j):
+				return mul(s1,s2,i,j) + mul(s2,s1,i,j)
+            
+			for i in range(self.num_states):
+				# Input uncertainty
+				do.dSdx[i,i] += 2*(mul('dMdxu','dMdu',i) + mul('dMdxp','dMdp',i))
+				do.dSdu[i,i] += 2*(mul('dMduu','dMdu',i) + mul('dMdup','dMdp',i))
+				do.dSdp[i,i] += 2*(mul('dMdup','dMdu',i) + mul('dMdpp','dMdp',i))
+				for j in range(i+1,self.num_states):
+					# Input uncertainty
+					do.dSdx[i,j] += mul2('dMdxu','dMdu',i,j)
+					do.dSdu[i,j] += mul2('dMduu','dMdu',i,j)
+					do.dSdp[i,j] += mul2('dMdup','dMdu',i,j)
+					# Parameter uncertainty
+					do.dSdx[i,j] += mul2('dMdxp','dMdp',i,j)
+					do.dSdu[i,j] += mul2('dMdup','dMdp',i,j)
+					do.dSdp[i,j] += mul2('dMdpp','dMdp',i,j)
+					# Symmetry
+					do.dSdx[j,i]  = do.dSdx[i,j]
+					do.dSdu[j,i]  = do.dSdu[i,j]
+					do.dSdp[j,i]  = do.dSdp[i,j]
+
+		return M, S, do
 		
 	def _x_dist_ode (self, t, X, U, grad=False):
 		x, S, do = self._ode_vector_unmerge(X, grad=grad)
@@ -254,13 +278,38 @@ class ctModel (StateSpaceModel):
 			dSdu = domm.dSdu + mul( 'dSdx', 'dMdu' ) + mul( 'dSds', 'dSdu' )
 			if self.num_param > 0:
 				dSdp = domm.dSdp + mul( 'dSdx', 'dMdp' ) + mul( 'dSds', 'dSdp' )
-		
-		#dVdx = mul( 'dVdx', 'dMdx' ) + mul( 'dVds', 'dSdx' )
-		#dVds = mul( 'dVdx', 'dMds' ) + mul( 'dVds', 'dSds' )
-		#dVdu = domm.dVdu + mul( 'dVdx', 'dMdu' ) + mul( 'dVds', 'dSdu' )
-		#if self.num_param > 0:
-		#	dVdp = domm.dVdp + mul( 'dVdx', 'dMdp' ) + mul( 'dVds', 'dSdp' )
-		
+
+			# Tensor multiplication
+			def tensmul (s1, s2):
+				a1, a2 = getattr(domm,s1), getattr(do,s2)
+				if a1.ndim == 3:
+					return np.einsum( 'aib,ic->abc', a1, a2 )
+				return np.einsum( 'ai,ibc->abc', a1, a2 )
+
+			# Tensor multiplication with three terms
+			def trimul (s1, s2, s3):
+				a1, a2 = getattr(do,s1), getattr(domm,s2)
+				a3     = np.eye(a2.shape[2]) if s3 == 'I' else getattr(do,s3)
+				return np.einsum( 'ib,aij,jc->abc', a1, a2, a3 )
+
+			# Compute Hessian update
+			def hess (a, b):
+				dMda, dMdb, dMdab = 'dMd'+a, 'dMd'+b, 'dMd'+a+b
+				ddM = trimul(dMda, 'dMdxx', dMdb) + tensmul('dMdx', dMdab)
+				if b != 'x':
+					ddM += trimul(dMda, 'dMdx'+b, 'I')
+					if a != 'x':
+						ddM += getattr(domm, dMdab) + tensmul('dMdx'+a, dMdb)
+				return ddM
+
+			dMdxx = hess('x','x')
+			dMdxu = hess('x','u')
+			dMduu = hess('u','u')
+			if self.num_param > 0:
+				dMdxp = hess('x','p')
+				dMdup = hess('u','p')
+				dMdpp = hess('p','p')
+
 		do.dMdx = dMdx
 		do.dMdu = dMdu
 		if self.num_param > 0:
@@ -270,13 +319,16 @@ class ctModel (StateSpaceModel):
 			do.dSdx = dSdx
 			do.dSds = dSds
 			do.dSdu = dSdu
-			#do.dVdx = dVdx
-			#do.dVds = dVds
-			#do.dVdu = dVdu
 			if self.num_param > 0:
-				#do.dMdp = dMdp
 				do.dSdp = dSdp
-				#do.dVdp = dVdp
+
+			do.dMdxx = dMdxx
+			do.dMdxu = dMdxu
+			do.dMduu = dMduu
+			if self.num_param > 0:
+				do.dMdxp = dMdxp
+				do.dMdup = dMdup
+				do.dMdpp = dMdpp
 		
 		# Total
 		return self._ode_vector_merge(x, S, do, grad=grad)
