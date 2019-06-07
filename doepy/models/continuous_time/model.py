@@ -205,6 +205,10 @@ class ctModel (StateSpaceModel):
 		X = odeint(self._x_dist_ode, X, T, args=(u,grad), tfirst=True)[-1]
 
 		M, S, do = self._ode_vector_unmerge(X, grad=grad)
+		M, S, do = self.control_and_parameter_uncertainty(M, S, do, grad=grad)
+		return M, S, do
+
+	def control_and_parameter_uncertainty (self, M, S, do, grad=False):
 		S += np.matmul( do.dMdu, np.matmul(self.u_covar, do.dMdu.T) )
 		if self.num_param > 0:
 			S += np.matmul( do.dMdp, np.matmul(self.p_covar, do.dMdp.T) )
@@ -245,8 +249,8 @@ class ctModel (StateSpaceModel):
 					do.dSdx[j,i]  = do.dSdx[i,j]
 					do.dSdu[j,i]  = do.dSdu[i,j]
 					do.dSdp[j,i]  = do.dSdp[i,j]
-
 		return M, S, do
+
 		
 	def _x_dist_ode (self, t, X, U, grad=False):
 		x, S, do = self._ode_vector_unmerge(X, grad=grad)
