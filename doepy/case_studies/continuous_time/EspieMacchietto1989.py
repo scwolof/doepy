@@ -65,9 +65,9 @@ class Model:
 		self.u_bounds = np.array([[0.05, 0.2], [5., 35.]])
 		self.x_bounds = np.array([[0., 20.], [0., 30.]])
 
-	@property
-	def num_param (self):
-		return len( self.p0 )
+	#@property
+	#def num_param (self):
+	#	return len( self.p0 )
 
 	@property
 	def S_p (self):
@@ -80,14 +80,16 @@ class Model:
 		        'name': self.name,
 		        'x_covar':  self.Q,
 		        'u_covar':  self.S_u,
-		        'p_covar':  self.S_p,
+		        #'p_covar':  self.S_p,
 		        'y_covar':  self.R,
 		        'hessian':  False,
 		        'x0_covar': self.S_x0,
 		        'x_bounds': self.x_bounds,
 		        'u_bounds': self.u_bounds,
-		        'num_meas': self.num_meas,
-		        'num_inputs': self.num_inputs}
+		        'num_meas': self.num_measured,
+		        'num_inputs': self.num_inputs,
+		        'num_param': self.num_param,
+		        'step_length':self.dt}
 
 
 class M1 (Model):
@@ -97,6 +99,8 @@ class M1 (Model):
     def __init__ (self):
         super().__init__('M1')
         self.p0 = np.array([ 0.3, 0.25, 0.56, 0.02 ])
+        self.num_param = len( self.p0 )
+        self.p_bounds = np.array([[0.,1.]]*self.num_param)
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
@@ -177,6 +181,8 @@ class M2 (Model):
     def __init__ (self):
         super().__init__('M2')
         self.p0 = np.array([ 0.3, 0.03, 0.55, 0.03 ])
+        self.num_param = len( self.p0 )
+        self.p_bounds = np.array([[0.,1.]]*self.num_param)
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
@@ -261,6 +267,8 @@ class M3 (Model):
     def __init__ (self):
         super().__init__('M3')
         self.p0 = np.array([ 0.12, 0.56, 0.03 ])
+        self.num_param = len( self.p0 )
+        self.p_bounds = np.array([[0.,1.]]*self.num_param)
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
@@ -324,6 +332,8 @@ class M4 (Model):
     def __init__ (self):
         super().__init__('M4')
         self.p0 = np.array([ 0.3, 0.3, 0.55, 0.05 ])
+        self.num_param = len( self.p0 )
+        self.p_bounds = np.array([[0.,1.]]*self.num_param)
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
@@ -402,6 +412,7 @@ class DataGen (M1):
 	def __init__ (self):
 		super().__init__()
 		self.true_param = np.array([ 0.31, 0.18, 0.55, 0.03 ])
+		self.num_param  = 0
 
 	def __call__ (self, x, u):
 		return super().__call__(x, u, self.true_param)
