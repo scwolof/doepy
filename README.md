@@ -7,7 +7,7 @@ Currently implements:
 * State uncertainty
 * Control input uncertainty
 * Delta constraints on control input
-* Mean (latent and observed) state constraints
+* Path (mean and chance) constraints
 * Design criteria
 * Discrimination criteria
 * SLSQP optimisation
@@ -17,11 +17,9 @@ To do:
 * Separate time points for controls, measurements and constraints
 * optimisation of initial state
 * prepare for optimisation of measurement time points
-* gradients (continuous time)
 * one-model option (prepare for nMPC and DOP?)
 * documentation
 * tests
-* merge branches
 * Static models
 * Function in ProblemInstance to specify what constraint(s) is violated
 
