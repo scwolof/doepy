@@ -198,7 +198,7 @@ class ctModel (StateSpaceModel):
 
 		return dM, dS, do
 
-	def _predict_x_dist (self, xk, Sk, u, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		do = LatentStateDerivatives(self)
 		X = self._ode_vector_merge(xk, Sk, grad=grad)
 		T = self._get_time_steps()
@@ -206,7 +206,7 @@ class ctModel (StateSpaceModel):
 
 		M, S, do = self._ode_vector_unmerge(X, grad=grad)
 		M, S, do = self.control_and_parameter_uncertainty(M, S, do, grad=grad)
-		return M, S, do
+		return (M, S) if not grad else (M, S, do)
 
 	def control_and_parameter_uncertainty (self, M, S, do, grad=False):
 		S += np.matmul( do.dMdu, np.matmul(self.u_covar, do.dMdu.T) )
