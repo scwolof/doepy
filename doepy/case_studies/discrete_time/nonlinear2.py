@@ -25,6 +25,9 @@ SOFTWARE.
 import numpy as np
 from scipy.stats import norm
 from ...derivatives import Derivatives
+from sympy import symbols, lambdify
+from numbers import Number
+from .err_function import cdf_1, cdf_2
 
 class Model:
     def __init__ (self, name, num_states):
@@ -50,7 +53,7 @@ class Model:
         self.S_u = 1e-6 * np.eye(self.num_inputs)
         
         # Initial parameter guess
-        self.p0 = [0.2, 0.1, 0.01]
+        
         
 
         # Initial latent state
@@ -66,8 +69,29 @@ class Model:
         # Control and latent state bounds
         self.u_bounds = np.array([[0., 0.1]])
         self.u_delta  = [ 0.01 ]
-        self.x_bounds = np.array([[0.,2.],[0.,3.],[0.,5.]])
-        self.z_bounds = np.array([[-0.1, 2.],[-0.1, 3.]])
+        self.x_bounds = np.array([[0.,1.2],[0.,3.],[0.,5.]])
+        #self.z_bounds = np.array([[-0.1, 2.],[-0.1, 3.]])
+        self.z_bounds = np.array([[-0.1, 1.2],[-0.1, 0.8]])
+        
+        self.dfdx = [[0 for i in range(self.num_states)] for j in range(self.num_states)]
+        self.dfdu = [[0 for i in range(self.num_inputs)] for j in range(self.num_states)]
+        self.dfdp = [[0 for i in range(self.num_param)] for j in range(self.num_states)]
+        
+        self.ddfdxx = [[[0 for i in range(self.num_states)] for j in range(self.num_states)] for k in range(self.num_states)]
+        self.ddfdxu = [[[0 for i in range(self.num_inputs)] for j in range(self.num_states)] for k in range(self.num_states)]
+        self.ddfdxp = [[[0 for i in range(self.num_param)] for j in range(self.num_states)] for k in range(self.num_states)]
+        
+        self.ddfduu = [[[0 for i in range(self.num_inputs)] for j in range(self.num_inputs)] for k in range(self.num_states)]
+        self.ddfdux = [[[0 for i in range(self.num_states)] for j in range(self.num_inputs)] for k in range(self.num_states)]
+        self.ddfdup = [[[0 for i in range(self.num_param)] for j in range(self.num_inputs)] for k in range(self.num_states)]
+        
+        self.ddfdpp = [[[0 for i in range(self.num_param)] for j in range(self.num_param)] for k in range(self.num_states)]
+        self.ddfdpx = [[[0 for i in range(self.num_states)] for j in range(self.num_param)] for k in range(self.num_states)]
+        self.ddfdpu = [[[0 for i in range(self.num_inputs)] for j in range(self.num_param)] for k in range(self.num_states)]
+        
+        
+        self.set_grad()
+        self.set_hessian()
 
     def __call__ (self, x, u, p, grad=False):
     	# Transition function
@@ -79,6 +103,7 @@ class Model:
         else:
             dxi, do = self.change(x, u, p, grad)
             dx = x + dxi
+            do.dMdx += np.eye(self.num_states)
             return np.maximum(dx, 0), do        
         
 
@@ -107,10 +132,107 @@ class Model:
                 'num_inputs': self.num_inputs,
                 'delta_transition': True}
 
+    def set_grad(self):
+        all_dev = self.get_derivatives()
+        k=0;
+        for i in range(self.num_states):
+            for j in range(self.num_states):
+                self.dfdx[i][j] = all_dev[k]
+                k+=1
+        
+        for i in range(self.num_states):
+            for j in range(self.num_inputs):
+                self.dfdu[i][j] = all_dev[k]
+                k+=1
+        
+        for i in range(self.num_states):
+            for j in range(self.num_param):
+                self.dfdp[i][j] = all_dev[k]
+                k+=1
+                
+    def set_hessian(self):
+        all_dev = []
+        for i in range(self.num_states):
+            for j in range(self.num_states):
+                all_dev = self.get_derivatives2(self.dfdx[i][j])
+                for k in range(self.num_states):
+                    self.ddfdxx[i][j][k] = all_dev[k]
+                for k in range(self.num_inputs):
+                    self.ddfdxu[i][j][k] = all_dev[k+self.num_states]
+                for k in range(self.num_param):
+                    self.ddfdxp[i][j][k] = all_dev[k+self.num_states+self.num_inputs]
+        
+        for i in range(self.num_states):
+            for j in range(self.num_inputs):
+                all_dev = self.get_derivatives2(self.dfdu[i][j])
+                for k in range(self.num_states):
+                    self.ddfdux[i][j][k] = all_dev[k]
+                for k in range(self.num_inputs):
+                    self.ddfduu[i][j][k] = all_dev[k+self.num_states]
+                for k in range(self.num_param):
+                    self.ddfdup[i][j][k] = all_dev[k+self.num_states+self.num_inputs]
+                    
+        for i in range(self.num_states):
+            for j in range(self.num_param):
+                all_dev = self.get_derivatives2(self.dfdp[i][j])
+                for k in range(self.num_states):
+                    self.ddfdpx[i][j][k] = all_dev[k]
+                for k in range(self.num_inputs):
+                    self.ddfdpu[i][j][k] = all_dev[k+self.num_states]
+                for k in range(self.num_param):
+                    self.ddfdpp[i][j][k] = all_dev[k+self.num_states+self.num_inputs]
+                
+            
+        
+                
+    def get_grad(self, grad,x,u,p):
+        jac = np.zeros((len(grad),len(grad[0])))
+        for i in range(len(grad)):
+            for k in range(len(grad[0])):
+                jac[i][k] = grad[i][k](x,u,p)
+        return jac
+    
+    def get_hessian(self, hessian,x,u,p):
+        hes = np.zeros((len(hessian),len(hessian[0]),len(hessian[0][0])))
+        for i in range(len(hessian)):
+            for j in range(len(hessian[0])):
+                for k in range(len(hessian[0][0])):
+                    if isinstance(hessian[i][j][k],Number):
+                        hes[i][j][k] = hessian[i][j][k]
+                    else:
+                        hes[i][j][k] = hessian[i][j][k](x,u,p)
+        return hes
+        
+
+    def get_derivatives(self):
+        arg_symbols = symbols(['x:'+str(self.num_states),'u:'+str(self.num_inputs),'p:'+str(self.num_param)])
+        sym_func = self.s_model(*arg_symbols)
+        return [lambdify(arg_symbols, sy.diff(varel),'sympy')  for varsy in arg_symbols for sy in sym_func for varel in varsy ]
+    
+   
+    def get_derivatives2(self, func):
+        arg_symbols = symbols(['x:'+str(self.num_states),'u:'+str(self.num_inputs),'p:'+str(self.num_param)])
+        sym_func = func(*arg_symbols)
+        if isinstance(sym_func,Number):
+            return [sym_func  for varsy in arg_symbols for varel in varsy ]
+        else:
+            return [lambdify(arg_symbols, sym_func.diff(varel))  for varsy in arg_symbols for varel in varsy ]
+        
+        
 
 class M1 (Model):
     def __init__ (self):
+        self.p0 = [0.2, 0.1, 0.01]
         super().__init__('M1',3)
+    
+    def s_model(self,x,u,p):
+        S, A, V    = x
+        k1, k2, k3 = p
+        dS = -k1*S*V + u[0]
+        dA =  k2*S*V
+        dV =  k1*S*V - k3*A*V
+        g = np.array([dS, dA, dV])
+        return g
 
     def change (self, x, u, p, grad=False):
         S, A, V    = x
@@ -121,62 +243,24 @@ class M1 (Model):
         g = np.array([dS, dA, dV])
         if not grad:
             return g
-        # dgdx
-        dgdx    = np.zeros((3,3))
-        dgdx[0] = np.array([-k1*V, 0, -k1*S])
-        dgdx[1] = np.array([k2*V, 0, k2*S])
-        dgdx[2] = np.array([k1*V, -k3*V, k1*S-k3*A])
-        # dgdu
-        dgdu    = np.zeros((3,1))
-        dgdu[0,0] = 1.0
-        # dgdp
-        dgdp = np.zeros((3,3))
-        dgdp[0] = np.array([-S*V, 0, 0])
-        dgdp[1] = np.array([0, S*V, 0])
-        dgdp[2] = np.array([S*V, 0, -A])
-        #dgdp[0] = np.array([])
-        # ddgddx
-        ddgddx = np.zeros((3,3,3))
-        ddgddx[0,2,0] = -k1 
-        ddgddx[1,2,0] = k2
-        ddgddx[2,2,0] = k1
-        ddgddx[2,2,1] = -k3
-        ddgddx[0,0,2] = -k1
-        ddgddx[1,0,2] = k2
-        ddgddx[2,0,2] = k1
-        ddgddx[2,1,2] = -k3
-        
-        ddgddu = np.zeros((3,1,1))
-        ddgdxu = np.zeros((3,3,1))
-        
-        dgddp = np.zeros((3,3,3))
-        dgdup = np.zeros((3,1,3))
-        dgdxp = np.zeros((3,3,3))
-        
-        dgdxp[0,0,0] = -V
-        dgdxp[0,2,0] = -S
-        dgdxp[2,0,0] = V
-        dgdxp[2,2,0] = S
-        
-        dgdxp[1,0,1] = V
-        dgdxp[1,2,1] = S
-        
-        dgdxp[2,1,2] = -V
-        dgdxp[2,2,2] = -A
-               
-        
         
         do = Derivatives(self.num_states, self.num_inputs, self.num_param, self.num_states)
-        do.dMdx = dgdx
-        do.dMdu = dgdu
-        do.dMdp = dgdp
-        do.dMdxx = ddgddx
-        do.dMdxu = ddgdxu
-        do.dMduu = ddgddu
         
-        do.dMdpp = dgddp
-        do.dMdup = dgdup
-        do.dMdxp = dgdxp
+        do.dMdx = self.get_grad(self.dfdx,x,u,p)
+        do.dMdu = self.get_grad(self.dfdu,x,u,p)
+        do.dMdp = self.get_grad(self.dfdp,x,u,p)
+        
+        
+        do.dMdxx = self.get_hessian(self.ddfdxx,x,u,p)
+        do.dMdxu = self.get_hessian(self.ddfdxu,x,u,p)
+        do.dMdxp = self.get_hessian(self.ddfdxp,x,u,p)
+        do.dMdux = self.get_hessian(self.ddfdux,x,u,p)
+        do.dMduu = self.get_hessian(self.ddfduu,x,u,p)
+        do.dMdup = self.get_hessian(self.ddfdup,x,u,p)
+        do.dMdpx = self.get_hessian(self.ddfdpx,x,u,p)
+        do.dMdpu = self.get_hessian(self.ddfdpu,x,u,p)
+        do.dMdpp = self.get_hessian(self.ddfdpp,x,u,p)
+        
         
         return g, do
         
@@ -184,13 +268,26 @@ class M1 (Model):
 
 class M2 (Model):
     def __init__ (self):
+        self.p0 = [0.2, 0.1, 0.01, 0.05, 0.01]
         super().__init__('M2',3)
-        self.p0 += [0.05, 0.01]
+        #self.p0 += [0.05, 0.01]
+    
+    def s_model (self, x, u, p):
+        S, A, V            = x
+        k1, k2, k3, k4, k5 = p
+        C  = cdf_1(S, k5, 0.05)
+        #C=0.99
+        dS = -C*k1*S*V + u[0]
+        dA =  C*k2*S*V - (1-C)*k4*A*V
+        dV =  C*k1*S*V + (1-C)*0.5*k4*A*V - k3*A*V
+        
+        g = np.array([dS, dA, dV])
+        return g
 
     def change (self, x, u, p, grad=False):
         S, A, V            = x
         k1, k2, k3, k4, k5 = p
-        C  = norm.cdf(S, k5, 0.05)
+        C  = cdf_2(S, k5**3.0, 0.05)
         #C=0.99
         dS = -C*k1*S*V + u[0]
         dA =  C*k2*S*V - (1-C)*k4*A*V
@@ -199,164 +296,75 @@ class M2 (Model):
         g = np.array([dS, dA, dV])
         if not grad:
             return g
-        # dgdx
-        dgdx    = np.zeros((3,3))
-        dgdx[0] = np.array([-C*k1*V, 0, -C*k1*S])
-        dgdx[1] = np.array([C*k2*V, -(1-C)*k4*V, C*k2*S - (1-C)*k4*A])
-        dgdx[2] = np.array([C*k1*V, (1-C)*0.5*k4*V - k3*V, C*k1*S + (1-C)*0.5*k4*A - k3*A])
-        # dgdu
-        dgdu    = np.zeros((3,1))
-        dgdu[0] = 1.0
-        # dgdp
-        dgdp = np.zeros((3,5))
-        dgdp[0] = np.array([-C*V*S, 0, 0, 0, 0])
-        dgdp[1] = np.array([0, C*V*S, 0, -(1-C)*A*V, 0])
-        dgdp[2] = np.array([C*V*S, 0, -A*V, 0.5*(1-C)*A*V, 0])
-        # ddgddx
-        ddgddx = np.zeros((3,3,3))
-        ddgddx[0,2,0] = -C*k1 
-        ddgddx[1,2,0] = C*k2
-        ddgddx[2,2,0] = C*k1
-        ddgddx[1,2,1] = -(1-C)*k4
-        ddgddx[2,2,1] = (1-C)*0.5*k4 - k3
-        ddgddx[0,0,2] = -C*k1
-        ddgddx[1,0,2] = C*k2
-        ddgddx[2,0,2] = C*k1
-        ddgddx[1,1,2] = -(1-C)*k4
-        ddgddx[1,2,2] = (1-C)*0.5*k4 - k3
-        
-        ddgddu = np.zeros((3,1,1))
-        ddgdxu = np.zeros((3,3,1))
-        
-        dgddp = np.zeros((3,5,5))
-        dgdup = np.zeros((3,1,5))
-        dgdxp = np.zeros((3,3,5))
-        
-        dgdxp[0,0,0] = -C*V
-        dgdxp[2,0,0] = C*V
-        dgdxp[0,2,0] = C*S
-        dgdxp[2,2,0] = C*S
-        
-        dgdxp[1,0,1] = C*V
-        dgdxp[1,2,1] = C*S
-        
-        dgdxp[2,1,2] = -V
-        dgdxp[2,2,2] = -A
-        
-        dgdxp[1,1,3] = -(1-C)*V
-        dgdxp[2,1,3] = (1-C)*V*0.5
-        dgdxp[1,2,3] = -(1-C)*A
-        dgdxp[2,2,3] = (1-C)*A*0.5
-        
         
         do = Derivatives(self.num_states, self.num_inputs, self.num_param, self.num_states)
-        do.dMdx = dgdx
-        do.dMdu = dgdu
-        do.dMdp = dgdp
-        do.dMdxx = ddgddx
-        do.dMdxu = ddgdxu
-        do.dMduu = ddgddu
         
-        do.dMdpp = dgddp
-        do.dMdup = dgdup
-        do.dMdxp = dgdxp
+        do.dMdx = self.get_grad(self.dfdx,x,u,p)
+        do.dMdu = self.get_grad(self.dfdu,x,u,p)
+        do.dMdp = self.get_grad(self.dfdp,x,u,p)
+        
+        
+        do.dMdxx = self.get_hessian(self.ddfdxx,x,u,p)
+        do.dMdxu = self.get_hessian(self.ddfdxu,x,u,p)
+        do.dMdxp = self.get_hessian(self.ddfdxp,x,u,p)
+        do.dMdux = self.get_hessian(self.ddfdux,x,u,p)
+        do.dMduu = self.get_hessian(self.ddfduu,x,u,p)
+        do.dMdup = self.get_hessian(self.ddfdup,x,u,p)
+        do.dMdpx = self.get_hessian(self.ddfdpx,x,u,p)
+        do.dMdpu = self.get_hessian(self.ddfdpu,x,u,p)
+        do.dMdpp = self.get_hessian(self.ddfdpp,x,u,p)
+
         return g, do
 
 
 class M3 (Model):
     def __init__ (self):
+        self.p0 = [0.2, 0.1, 0.01, 0.05, 0.01, 0.01]
         super().__init__('M3',4)
-        self.p0 += [0.05, 0.01, 0.01]
         self.x_bounds = np.vstack((self.x_bounds, np.array([0., 0.5])))
 
+    def s_model (self, x, u, p, grad=False):
+        S, A, V, P             = x
+        k1, k2, k3, k4, k5, k6 = p
+        C  = cdf_1(S, k5, 0.1)
+        #C = 0.98
+        dS = -C*k1*S*V + u[0]
+        dA =  C*k2*S*V - (1-C)*k4*A*V - k6*S*P
+        dV =  C*k1*S*V + (1-C)*0.5*k4*A*V - k3*A*V
+        dP = (1-C)*0.1*k4*A*V
+        g = np.array([dS, dA, dV, dP])
+        return g
+        
     def change (self, x, u, p, grad=False):
         S, A, V, P             = x
         k1, k2, k3, k4, k5, k6 = p
-        C  = norm.cdf(S, k5, 0.1)
-        #C = 0.99
-        dS = -C*k1*S*V + u[0] 
+        C  = cdf_2(S, k5, 0.1)
+        #C = 0.98
+        dS = -C*k1*S*V + u[0]
         dA =  C*k2*S*V - (1-C)*k4*A*V - k6*S*P
         dV =  C*k1*S*V + (1-C)*0.5*k4*A*V - k3*A*V
         dP = (1-C)*0.1*k4*A*V
         g = np.array([dS, dA, dV, dP])
         if not grad:
             return g
-        # dgdx
-        dgdx    = np.zeros((4,4))
-        dgdx[0] = np.array([-C*k1*V, 0, -C*k1*S, 0])
-        dgdx[1] = np.array([C*k2*V - k6*P, -(1-C)*k4*V, C*k2*S - (1-C)*k4*A, -k6*S])
-        dgdx[2] = np.array([C*k1*V, (1-C)*0.5*k4*V - k3*V, C*k1*S + (1-C)*0.5*k4*A - k3*A, 0])
-        dgdx[3] = np.array([0, (1-C)*0.1*k4*V, (1-C)*0.1*k4*A, 0])
-        # dgdu
-        dgdu    = np.zeros((4,1))
-        dgdu[0] = 1.0
-        # dgdp
-        dgdp    = np.zeros((4,6))
-        dgdp[0,0] = -C*V*S
-        dgdp[1] = np.array([0, C*V*S, 0, -(1-C)*A*V, 0, -S*P])
-        dgdp[2] = np.array([C*V*S, 0, -A*V, 0.5*(1-C)*A*V, 0, 0])
-        dgdp[3] = np.array([0, 0, 0, 0.1*(1-C)*A*V, 0, 0])
-        
-        # ddgddx
-        ddgddx = np.zeros((4,4,4))
-        ddgddx[0,2,0] = -C*k1 
-        ddgddx[1,2,0] = C*k2
-        ddgddx[1,3,0] = -k6
-        ddgddx[2,2,0] = C*k1
-        
-        ddgddx[1,2,1] = -(1-C)*k4
-        ddgddx[2,2,1] = (1-C)*0.5*k4 - k3
-        ddgddx[3,2,1] = (1-C)*0.1*k4
-                
-        ddgddx[0,0,2] = -C*k1
-        ddgddx[1,0,2] = C*k2
-        ddgddx[2,0,2] = C*k1
-        ddgddx[1,1,2] = -(1-C)*k4
-        ddgddx[2,1,2] = (1-C)*0.5*k4 - k3
-        ddgddx[3,1,2] = (1-C)*0.1*k4
-        
-        ddgddx[1,0,3] = -k6
-        
-        ddgddu = np.zeros((4,1,1))
-        ddgdxu = np.zeros((4,4,1))
-        
-        dgddp = np.zeros((4,6,6))
-        dgdup = np.zeros((4,1,6))
-        dgdxp = np.zeros((4,4,6))
-        
-        dgdxp[0,0,0] = -C*V
-        dgdxp[2,0,0] = C*V
-        dgdxp[0,2,0] = -C*S
-        dgdxp[2,2,0] = C*S
-        
-        dgdxp[1,0,1] = C*V
-        dgdxp[1,2,1] = C*S
-        
-        dgdxp[2,1,2] = -V
-        dgdxp[2,2,2] = -A
-        
-        dgdxp[1,1,3] = -(1-C)*V
-        dgdxp[2,1,3] = 0.5*(1-C)*V
-        dgdxp[3,1,3] = 0.1*(1-C)*V
-        dgdxp[1,2,3] = -(1-C)*A
-        dgdxp[2,2,3] = 0.5*(1-C)*A
-        dgdxp[3,2,3] = 0.1*(1-C)*A
-        
-        dgdxp[1,0,5] = -P
-        dgdxp[1,3,5] = -S       
-        
         
         do = Derivatives(self.num_states, self.num_inputs, self.num_param, self.num_states)
-        do.dMdx = dgdx
-        do.dMdu = dgdu
-        do.dMdp = dgdp
-        do.dMdxx = ddgddx
-        do.dMdxu = ddgdxu
-        do.dMduu = ddgddu
         
-        do.dMdpp = dgddp
-        do.dMdup = dgdup
-        do.dMdxp = dgdxp
+        do.dMdx = self.get_grad(self.dfdx,x,u,p)
+        do.dMdu = self.get_grad(self.dfdu,x,u,p)
+        do.dMdp = self.get_grad(self.dfdp,x,u,p)
+        
+        
+        do.dMdxx = self.get_hessian(self.ddfdxx,x,u,p)
+        do.dMdxu = self.get_hessian(self.ddfdxu,x,u,p)
+        do.dMdxp = self.get_hessian(self.ddfdxp,x,u,p)
+        do.dMdux = self.get_hessian(self.ddfdux,x,u,p)
+        do.dMduu = self.get_hessian(self.ddfduu,x,u,p)
+        do.dMdup = self.get_hessian(self.ddfdup,x,u,p)
+        do.dMdpx = self.get_hessian(self.ddfdpx,x,u,p)
+        do.dMdpu = self.get_hessian(self.ddfdpu,x,u,p)
+        do.dMdpp = self.get_hessian(self.ddfdpp,x,u,p)
+        
         return g, do
 
 
