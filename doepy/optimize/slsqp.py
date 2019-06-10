@@ -5,11 +5,19 @@ The slsqp code is taken from scipy.optimize.slsqp._minimize_slsqp
 
 import numpy as np 
 from scipy.optimize._slsqp import slsqp as scipy_slsqp
+from numpy import linalg
 
-def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
+def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None, 
+           maxmajiter=30, stepdesc=0.1,qptol=1e-6,debug=True):
     """
     Wrapping function for scipy SLSQP function to solve control problems with
     inequality constraints.
+    maxiter: max number of iterations of the QP solver
+    maxmajiter: max number of iterations of the SQP solver
+    stepdesc: step of QP solver
+    qptol : tolerance used for the qp solver. It is used for constraint tolerance
+    debug:  False = print no information
+            True  = print iterations calculations
     """
     # Transform u0 into an array.
     u = np.asfarray(u0).flatten()
@@ -73,6 +81,8 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
     saved_f        = []
     max_saved_f    = 20
     rescale_factor = None
+    if debug:
+        print("%5s %16s %16s %16s %16s" % ("NIT", "OBJFUN", "FNORM", "CMIN", "CNORM"))
 
     while 1:
 
@@ -92,7 +102,8 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
                 else:
                     rescale_factor = 1.
                 #print('Initial rescaling: %f'%(rescale_factor))
-
+                
+    
             # Write to log
             if log_callback is not None:
                 log_callback(u, f, c, df, dc, rescale_factor)
@@ -105,34 +116,31 @@ def slsqp (problem_instance, u0, maxiter=100, ftol=1.0E-6, log_callback=None):
                 saved_f = saved_f[1:] + [f]
 
             f  = float(np.asarray(f)) * rescale_factor
-            #f = float(np.asarray(f))
             df = np.append(df, 0.0) * rescale_factor
-            #df = np.append(df, 0.0)
-            #dc = np.c_[ dc, np.zeros( la ) ]
-            c = np.zeros(1)
-            dc = np.zeros((1,51))
+            dc = np.c_[ dc, np.zeros( la ) ]
+            
 
             if np.any([np.any(np.isnan(mat)) for mat in [u, f, c, df, dc]]):
                 mode = 10
                 break
-            
+        itermx = np.array(maxmajiter)   
+        alpha = np.array(stepdesc)
+        tol = qptol
         # Call SLSQP
         scipy_slsqp(m, 0, u, ul, uu, f, c, df, dc, acc, majiter, mode, w, jw,
                     alpha, f0, gs, h1, h2, h3, h4, t, t0, tol,
                     iexact, incons, ireset, itermx, line, n1, n2, n3)
+        
+        if debug:
+            if mode == 1:
+                print("%5i % 16.6E % 16.6E % 16.6E % 16.6E % 16.6E " % (majiter, f, linalg.norm(df), np.min(c),linalg.norm(dc),f+0.01*np.sum(df)))
         
 
         # If exit mode is not -1 or 1, slsqp has typically completed
         # HOWEVER: we do not necessarily want to terminate on mode 8
         if abs(mode) != 1:
             if mode == 8:
-                abs_non_zero_f = [np.abs(sf) for sf in saved_f if sf != 0]
-                if len( abs_non_zero_f ) == 0:
-                    break
-                rescale_factor = 2. / np.mean(abs_non_zero_f)
-                f  *= rescale_factor
-                df *= rescale_factor
-                #print('Changing rescaling: %f'%(rescale_factor))
+                alpha = alpha/10;
             else:
                 break
 
