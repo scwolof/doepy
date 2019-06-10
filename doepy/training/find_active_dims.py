@@ -75,11 +75,11 @@ def find_active_dims (f, bounds_list, num_points=5, threshold=1e-10,
 				C[e,d] = differences[d,e] >= threshold
 		return C
 
-	C = np.zeros((num_outputs, Dtot), bool) 
-
 	# num_points-1 model evaluations
 	Y = np.array([ f(*separate(x)) for x in X[:-1] ])
 	E = Y.shape[1]
+	# Active dims
+	C = np.zeros((E, Dtot), bool) 
 
 	Di = np.zeros((Dtot, E))
 	# At most (num_points-1)*Dtot model evaluations
