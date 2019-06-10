@@ -1,6 +1,6 @@
 from .model import dtModel
 from .linearmodel import dtLinearModel
-from .nonlinearmodel import dtNonLinearModel
+#from .nonlinearmodel import dtNonLinearModel
 
 try:
 	import GPy
