@@ -51,31 +51,7 @@ class ctGPModel (ctModel, GPModel):
 		self.x_bounds      = candidate_model.x_bounds
 		self.x_constraints = None
 
-	"""
-	Train GP surrogates
-	"""
-	def train (self, active_dims=None, noise_var=default_noise_var, hyp=None, **kwargs):
-		# Training data dictionary
-		dic = {'f':self.f, 'active_dims': active_dims,
-		       'x_bounds':self.x_bounds, 'u_bounds':self.u_bounds,
-		       'return_active_dims':True}
-
-		# Model parameters
-		if self.num_param > 0:
-			assert 'p_bounds' in kwargs, 'Training requires parameter bounds'
-			dic['p_bounds'] = kwargs.get('p_bounds')
-		# Number of training data points
-		nom = 'num_data_points_per_num_dim_combo'
-		if nom in kwargs:
-			dic[nom] = kwargs.get(nom)
-		T, active_dims = generate_training_data(**dic)
-		
-		# Training targets
-		Z = T[-1]
-		# Training inputs
-		T = [ np.concatenate(t, axis=1) for t in zip(*T[:-1]) ]
-
-		self._train(T, Z, active_dims, noise_var, hyp=hyp, **kwargs)
+		self.delta_transition = False
 
 	"""
 	State prediction
