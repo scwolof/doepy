@@ -24,7 +24,7 @@ SOFTWARE.
 
 import numpy as np
 from numpy.random import multivariate_normal as mvn
-from scipy.integrate import odeint
+from scipy.integrate import solve_ivp
 
 from ..derivatives import LatentStateDerivatives
 from ..statespacemodel import StateSpaceModel
@@ -51,9 +51,10 @@ class ctModel (StateSpaceModel):
 
 	def _predict (self, x, u, start_time=0.):
 		args = (u,) if self.num_param < 1 else (u, self.p_mean)
-		ode  = lambda t, x, args: self.f(x,*args)
+		ode  = lambda t, x: self.f(x,*args)
 		T    = self._get_time_steps(start=start_time)
-		xk1  = odeint(ode, x, T, args=(args,), tfirst=True)[-1]
+		T    = (T[0], T[-1])
+		xk1  = solve_ivp(ode, T, x)['y'][:,-1]
 		yk   = np.matmul(self.H, x)
 		return xk1, yk
 
@@ -199,10 +200,14 @@ class ctModel (StateSpaceModel):
 		return dM, dS, do
 
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
-		do = LatentStateDerivatives(self)
-		X = self._ode_vector_merge(xk, Sk, grad=grad)
-		T = self._get_time_steps()
-		X = odeint(self._x_dist_ode, X, T, args=(u,grad), tfirst=True)[-1]
+		if cross_cov:
+			raise NotImplementedError(
+			    'Cross covariance not implemented for continuous time models')
+		ode = lambda t, x: self._x_dist_ode(t,x,u,grad=grad)
+		X   = self._ode_vector_merge(xk, Sk, grad=grad)
+		T   = self._get_time_steps()
+		T   = (T[0], T[-1])
+		X   = solve_ivp(ode, T, X)['y'][:,-1]
 
 		M, S, do = self._ode_vector_unmerge(X, grad=grad)
 		M, S, do = self.control_and_parameter_uncertainty(M, S, do, grad=grad)
