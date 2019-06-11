@@ -35,9 +35,20 @@ class dtSparseGPModel (dtGPModel):
 		"""
 		super().__init__(*args, **kwargs)
 
+		"""
+		Number of training points along each dimension for a grid of training
+		data points, i.e. 
+		- a 1-dimensional input gets 101 training points
+		- a 2-dimensional input gets 21**2 training points
+		- a 3-dimensional input gets 10**3 training points
+		- etc.
+		"""
+		self.num_data_points_per_num_dim = [101, 21, 15, 11, 6, 4, 3]
+
 	"""
 	Train GP surrogates
 	"""
 	def _gp_regression (self, X, Y, kern, **kwargs):
-		num_inducing = kwargs.get('num_inducing',100)
+		num_default  = [20, 40, 100, 200, 400][np.min((4,len(kern.active_dims)))]
+		num_inducing = kwargs.get('num_inducing', num_default)
 		return SparseGPRegression(X, Y, kern, num_inducing=num_inducing)
