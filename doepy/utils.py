@@ -24,11 +24,16 @@ SOFTWARE.
 
 import numpy as np
 
-def assert_symmetric_matrix (A):
+def assert_square_matrix (A):
     if not isinstance(A, np.ndarray):
         raise ValueError('Input must be numpy.ndarray, not %s'%type(A))
     if not A.ndim == 2:
         raise AssertionError('Input must be 2D matrix, not %dD'%A.ndim)
+    if not A.shape == (A.shape[0], A.shape[0]):
+        raise AssertionError('Input not square matrix, shape=(%s,%s)'%A.shape)
+
+def assert_symmetric_matrix (A):
+    assert_square_matrix(A)
     if not np.allclose(A, A.T, rtol=1e-8, atol=1e-10):
         raise AssertionError('Matrix not symmetrical')
 
@@ -59,6 +64,8 @@ def assert_not_none (variable, name='<variable_name>'):
         raise AssertionError('Variable %s is None'%name)
 
 def assert_is_instance (variable, dtype, name='<variable_name>'):
+    if dtype is None:
+        raise ValueError('dtype must not be None')
     if not isinstance(variable, dtype):
         raise AssertionError('%s must be of type %s: %s'%(name, dtype, variable))
                     
