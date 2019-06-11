@@ -26,9 +26,9 @@ import numpy as np
 
 from GPy.models import SparseGPRegression
 
-from .gpmodel import dtGPModel
+from .gpmodel import ctGPModel
 
-class dtSparseGPModel (dtGPModel):
+class ctSparseGPModel (ctGPModel):
 	def __init__ (self, *args, **kwargs):
 		"""
 		We place a _sparse_ GP prior on the function g
