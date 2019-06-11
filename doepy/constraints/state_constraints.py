@@ -23,8 +23,7 @@ SOFTWARE.
 """
 
 import numpy as np
-import math
-from scipy import special as sp
+from scipy.special import erf, erfinv
 
 class StateConstraint:
     def __init__ (self, bounds, **kwargs):
@@ -44,9 +43,6 @@ class StateConstraint:
             # Constant bounds
             self.conf = kwargs['conf']
             
-            
-            
-        
     @property
     def has_added_variables (self):
         return False
@@ -84,18 +80,13 @@ class ConstantMeanStateConstraint (StateConstraint):
         
     def __call__ (self, M, S, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
-        #print( 'mean' )
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
             dCdS = np.zeros( C.shape + S.shape )
         
         for i in range(self.num_states):
             C[2*i]   = M[i] - self.bounds[i,0]
-            #print('lower: %d'%i)
-            #print(self.bounds[i,0])
             C[2*i+1] = self.bounds[i,1] - M[i]
-            #print('upper: %d'%i)
-            #print(self.bounds[i,1])
             if grad:
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
@@ -128,78 +119,79 @@ class MovingMeanStateConstraint (StateConstraint):
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
         return C if not grad else (C, dCdM, dCdS)
-    
+
 
 class SingleChanceStateConstraint (StateConstraint):
     r"""    
     Chance constraint:
-        conf = probability
+        conf = confidence
         r = distance from the mean value for a defined tolerance
-        P(\mu_i(t)+r*S <= bounds[i,1]) > 1-conf
-        P(\mu_i(t)-r*S >= bounds[i,1]) > 1-conf
+        P( \mu_i(t) + alpha * S <= bounds[i,1] ) > conf
+        P( \mu_i(t) - alpha * S >= bounds[i,1] ) > conf
     """   
-    
-    def __init__ (self, bounds, **kwargs):
-        super().__init__ (bounds,**kwargs)
+    def __init__ (self, bounds, conf=0.95):
+        super().__init__ (bounds)
         assert self.bounds.ndim == 2
-        
+        self.conf  = conf
+        self.alpha = np.sqrt(2) * erfinv(self.conf)
 
     def num_constraints (self):
         return 2 * self.num_states
-    
+
     def __call__ (self, M, S, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
-        r = math.pow(2,0.5)*sp.erfinv(self.conf)
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
             dCdS = np.zeros( C.shape + S.shape )
-        
+
         for i in range(self.num_states):
-            C[2*i]   = M[i] - r*np.sqrt(S[i,i]) - self.bounds[i,0];
-            C[2*i+1] = self.bounds[i,1]- r*np.sqrt(S[i,i]) - M[i];
-            
+            C[2*i]   = M[i] - self.alpha*np.sqrt(S[i,i]) - self.bounds[i,0];
+            C[2*i+1] = self.bounds[i,1]- self.alpha*np.sqrt(S[i,i]) - M[i];
+
             if grad:
-                dCdM[2*i,  i] = 1.
-                dCdM[2*i+1,i] = -1.
-                dCdS[2*i,  i] = -r/(2*np.sqrt(S[i,i]))
-                dCdS[2*i+1,i] = -r/(2*np.sqrt(S[i,i]))
+                dCdM[2*i,  i]   = 1.
+                dCdM[2*i+1,i]   = -1.
+                dCdS[2*i,  i] = -self.alpha/(2*np.sqrt(S[i,i]))
+                dCdS[2*i+1,i] = -self.alpha/(2*np.sqrt(S[i,i]))
         return C if not grad else (C, dCdM, dCdS)
-    
+
+
 class JointTimeChanceStateConstraint (StateConstraint):
     r"""    
     Chance constraint:
         P1(\mu_i(t)+r*S <= bounds[i,1]) > 1-eps
         P2(\mu_i(t)-r*S >= bounds[i,1]) > 1-eps
     """   
-    
-    def __init__ (self, bounds,**kwargs):
+    def __init__ (self, bounds, conf=0.95):
         super().__init__ (bounds,**kwargs)
         assert self.bounds.ndim == 2
-        
 
     def num_constraints (self):
         return 2 * self.num_states
-    
+
     def __call__ (self, M, S, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
-        
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
             dCdS = np.zeros( C.shape + S.shape )
-        
+
         for i in range(self.num_states):
-            r1 = (M[i] - self.bounds[i,0])/np.sqrt(S[i,i])
-            r2 = (self.bounds[i,1] - M[i])/np.sqrt(S[i,i])
-            P1 = 1-(0.5+0.5*sp.erf(r1/(math.pow(2,0.5))))
-            P2 = 1-(0.5+0.5*sp.erf(r2/(math.pow(2,0.5))))
-            
+            div = 1. / np.sqrt(S[i,i])
+            r1  = (M[i] - self.bounds[i,0]) * div
+            r2  = (self.bounds[i,1] - M[i]) * div
+            P1  = 0.5 * ( 1 - erf(r1 / np.sqrt(2)) )
+            P2  = 0.5 * ( 1 - erf(r2 / np.sqrt(2)) )
+
             C[2*i]   = P1
             C[2*i+1] = P2
-            
-            if grad:
-                dCdM[2*i,  i] = -math.exp(-math.pow(M[i]- self.bounds[i,0],2)/(2*S[i,i]))/(np.sqrt(2*math.pi*S[i,i]))
-                dCdM[2*i+1,i] = -math.exp(-math.pow(self.bounds[i,1] - M[i],2)/(2*S[i,i]))/(np.sqrt(2*math.pi*S[i,i]))
-                dCdS[2*i,  i] = (M[i]-self.bounds[i,0])*math.exp(-math.pow(M[i]- self.bounds[i,0],2)/(2*S[i,i]))/(np.sqrt(2*math.pi)*S[i,i])
-                dCdS[2*i+1,i] = (self.bounds[i,1] - M[i])*math.exp(-math.pow(self.bounds[i,1] - M[i],2)/(2*S[i,i]))/(np.sqrt(2*math.pi)*S[i,i])
-        return C if not grad else (C, dCdM, dCdS)
 
+            if grad:
+                diff  = M[i] - self.bounds[i]
+                diff2 = np.exp( -0.5 * diff**2 / S[i,i] )
+                div1  = 1. / np.sqrt(2*np.pi*S[i,i])
+                div2  = 1. / ( np.sqrt(2*np.pi)*S[i,i] )
+                dCdM[2*i,  i]   = -diff2[0] * div1
+                dCdM[2*i+1,i]   = -diff2[1] * div1
+                dCdS[2*i,  i,i] =  diff[0] * diff2[0] * div2
+                dCdS[2*i+1,i,i] = -diff[1] * diff2[1] * div2
+        return C if not grad else (C, dCdM, dCdS)
