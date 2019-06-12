@@ -72,9 +72,12 @@ class ctGPModel (ctModel, GPModel):
 			dS[e,e] = tmp[1][0,0]
 		    
 		do = Derivatives(E, num_states=E+D+P)
-		do.dMdx, do.dSdx = d_pred_d_x(self.gps, input_mean, diag=True)
+
 		if grad:
+			do.dMdx, do.dSdx = d_pred_d_x(self.gps, input_mean, diag=True)
 			do.dMdxx = d2_m_d_x2(self.gps, input_mean)
+		else:
+			do.dMdx  = d_pred_d_x(self.gps, input_mean, mean_only=True)
 
 		# Transform back
 		if self.transform:
