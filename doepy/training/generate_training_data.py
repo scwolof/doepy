@@ -31,20 +31,36 @@ def generate_training_data (f, x_bounds, u_bounds, p_bounds=None, active_dims=No
     """
     Generate training data sets for each target dimension of f
     """
+    has_p = p_bounds is not None
+
     bounds = (x_bounds, u_bounds)
     if active_dims is None:
-        ad_bounds   = bounds if p_bounds is None else bounds + (p_bounds,)
+        ad_bounds   = bounds if not has_p else bounds+(p_bounds,)
         active_dims = find_active_dims(f, ad_bounds)
 
     # Generate meshgrids of x and u
     X, U = generate_locations(bounds, active_dims, num_data_points_per_num_dim)
     # Generate observations at points [x,u,(p)] in (X,U)
-    Y    = generate_observations(f, X, U, active_dims, p_bounds=p_bounds)
-    T    = (X, U)
-    if p_bounds is None:
-        T += (Y, )
-    else:
-        T += (Y[0], Y[1])
+    Y = generate_observations(f, X, U, active_dims, p_bounds=p_bounds)
+    if has_p:
+        P, Y = Y
+
+    # Check for NaN/inf values
+    N = len( active_dims )
+    for n in range(N): # For all target dimensions
+        z = Y[n]
+        D = [ i for i in range(len(z)) if np.isnan(z[i]) or np.isinf(z[i]) ]
+        if len(D) > 0:
+            # Delete invalid training data
+            X[n] = np.delete(X[n], D, axis=0)
+            U[n] = np.delete(U[n], D, axis=0)
+            Y[n] = np.delete(Y[n], D, axis=0)
+            if has_p:
+                P[n] = np.delete(P[n], D, axis=0)
+
+    # Concatenate training data
+    T  = (X, U, Y) if not has_p else (X, U, P, Y)
+
     if return_active_dims:
         return T, active_dims
     return T
