@@ -62,7 +62,6 @@ class GPModel:
 		self.num_data_points_per_num_dim = [101, 21, 10, 6, 4, 3]
 
 
-
 	"""
 	Train GP surrogates
 	"""
@@ -84,6 +83,12 @@ class GPModel:
 		
 		# Training targets
 		Z = T[-1]
+		for z in Z:
+			if np.any( np.isnan(z) ):
+				raise ValueError('NaN in training data!')
+			if np.any( np.isinf(z) ):
+				raise ValueError('infinite values in training data!')
+
 		if self.delta_transition:
 			D = np.arange( self.num_states )
 			Z = [ z - x[:,d] for z,x,d in zip(Z, T[0], D) ]
