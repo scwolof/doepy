@@ -53,23 +53,11 @@ class ProblemInstance:
         for const in self.u_constraints:
             # Control constraints
             self.num_constraints += const.num_constraints( self.num_steps )
+
         for const in self.z_constraints:
             # Observed state constraints
-            if isinstance(const, ConstantMeanStateConstraint) or isinstance(const, MovingMeanStateConstraint):
-                self.num_constraints += self.num_steps * self.num_models \
-                                    * const.num_constraints()
+            self.num_constraints += const.sum_num_constraints(self.num_steps,self.num_models)
                                     
-            if isinstance(const, SingleChanceStateConstraint):
-                self.num_constraints += self.num_steps * self.num_models \
-                                    * const.num_constraints()
-            
-            if isinstance(const, PointwiseChanceStateConstraint):
-                self.num_constraints += self.num_steps * self.num_models
-            
-            if isinstance(const, JointChanceStateConstraint):
-                self.num_constraints += self.num_models
-                                                           
-                                
         for model in self.models:
             # Latent state constraints - for data-driven surrogate models
             self.num_constraints += self.num_steps * model.num_x_constraints()
@@ -153,61 +141,15 @@ class ProblemInstance:
                 model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
                 
                 
-                
                 # State constraint for model i at time n
                 for const in self.z_constraints:
-                     # Mean value path constraint 
-                    if isinstance(const, ConstantMeanStateConstraint) or isinstance(const, MovingMeanStateConstraint) :
-                        c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
-                        L = const.num_constraints()
-                        C[ i_c: i_c+L ]    = c
-                        dCdU[ i_c: i_c+L ] = (np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
-                                           + np.einsum('ijk,jknd->ind',dcdS,dSdU[i]))
-                        i_c += L
+                    c, dcdU = const(Z[i], S[i], dZdU[i], dSdU[i], step=n, grad=True)
+                    L = const.num_constraints()
+                    C[ i_c: i_c+L ]    = c
+                    dCdU[ i_c: i_c+L ] = dcdU
+                    i_c += L
                     
                     
-                    # Single path chance constraint 
-                    if isinstance(const, SingleChanceStateConstraint):
-                        c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
-                        L = const.num_constraints()
-                        C[ i_c: i_c+L ]    = c
-                        dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
-                                           + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
-                        i_c += L
-                    
-                    # Pointwise path chance constraint     
-                    if isinstance(const, PointwiseChanceStateConstraint):
-                        c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
-                        L = const.num_constraints()
-                        C[ i_c ]    = c
-                        dCdU[ i_c ] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
-                                           + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
-                        i_c += L
-                    
-                    # Joint path chance constraint     
-                    if isinstance(const, JointChanceStateConstraint):
-                        p, dpdZ, dpdS = const(Z[i], S[i], step=n, grad=True)
-                        if n==0:
-                            if i==0:
-                                pj = np.zeros(self.num_models)
-                                dpjdZ = np.zeros((self.num_models,)+(1,)+Z[i].shape)
-                                dpjdS = np.zeros((self.num_models,)+(1,)+(self.num_meas,self.num_meas))
-                            pj[i] = p
-                            dpjdZ[i] = dpdZ
-                            dpjdS[i] = dpdS
-                        else:
-                            dpjdZ[i] += dpdZ
-                            dpjdS[i] += dpdS
-                            pj[i] += p
-                        
-                        if n==self.num_steps-1:
-                            C[ i_c ]    = pj[i]/self.num_steps - const.conf
-                            dCdU[ i_c ] = (1/self.num_steps)*(np.einsum('ij,jnk->ink',dpjdZ[i],dZdU[i]) \
-                                           + np.einsum('ijk,jknd->ind',dpjdS[i],dSdU[i]))
-                            i_c += 1
-
-                            
-
             # Divergence between predictive distributions at time n
             for i, model in enumerate( self.models ):
                 # Add measurement noise covariance
