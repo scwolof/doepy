@@ -23,6 +23,7 @@ SOFTWARE.
 """
 
 import numpy as np
+from .constraints.state_constraints import SingleChanceStateConstraint, PointwiseChanceStateConstraint, JointChanceStateConstraint, ConstantMeanStateConstraint, MovingMeanStateConstraint
 
 class ProblemInstance:
     def __init__ (self, models, num_steps, div_criterion, u_bounds,
@@ -54,11 +55,21 @@ class ProblemInstance:
             self.num_constraints += const.num_constraints( self.num_steps )
         for const in self.z_constraints:
             # Observed state constraints
-            if str(const.__class__) == 'JointTimeChanceStateConstraint':
-                self.num_constraints += self.num_models * const.num_constraints()
-            else:
+            if isinstance(const, ConstantMeanStateConstraint) or isinstance(const, MovingMeanStateConstraint):
                 self.num_constraints += self.num_steps * self.num_models \
                                     * const.num_constraints()
+                                    
+            if isinstance(const, SingleChanceStateConstraint):
+                self.num_constraints += self.num_steps * self.num_models \
+                                    * const.num_constraints()
+            
+            if isinstance(const, PointwiseChanceStateConstraint):
+                self.num_constraints += self.num_steps * self.num_models
+            
+            if isinstance(const, JointChanceStateConstraint):
+                self.num_constraints += self.num_models
+                                                           
+                                
         for model in self.models:
             # Latent state constraints - for data-driven surrogate models
             self.num_constraints += self.num_steps * model.num_x_constraints()
@@ -122,16 +133,11 @@ class ProblemInstance:
             return dMdU, dSdU
                    
         
-        # initial i_c
-        ic_0 = i_c
         # Iterate over control sequence
         for n, u in enumerate( U ):
             dZdU.fill(0.)
             dSdU.fill(0.)
             
-            if str(const.__class__) == 'JointTimeChanceStateConstraint':
-                i_c = ic_0
-
             # Predictive distributions at time n for model i
             for i, model in enumerate( self.models ):
                 x[i], s[i], dox = model.predict_x_dist(x[i], s[i], u, grad=True)
@@ -145,20 +151,62 @@ class ProblemInstance:
 
                 # Update latent state constraints
                 model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
-
+                
+                
+                
                 # State constraint for model i at time n
                 for const in self.z_constraints:
-                    c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
-                    L = const.num_constraints()
-                    if str(const.__class__) == 'JointTimeChanceStateConstraint':
-                        C[i_c:i_c+L] += c
-                        dCdU[i_c:i_c+L] += np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
-                                           + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
-                    else:
+                     # Mean value path constraint 
+                    if isinstance(const, ConstantMeanStateConstraint) or isinstance(const, MovingMeanStateConstraint) :
+                        c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
+                        L = const.num_constraints()
+                        C[ i_c: i_c+L ]    = c
+                        dCdU[ i_c: i_c+L ] = (np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
+                                           + np.einsum('ijk,jknd->ind',dcdS,dSdU[i]))
+                        i_c += L
+                    
+                    
+                    # Single path chance constraint 
+                    if isinstance(const, SingleChanceStateConstraint):
+                        c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
+                        L = const.num_constraints()
                         C[ i_c: i_c+L ]    = c
                         dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
                                            + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
-                    i_c += L
+                        i_c += L
+                    
+                    # Pointwise path chance constraint     
+                    if isinstance(const, PointwiseChanceStateConstraint):
+                        c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
+                        L = const.num_constraints()
+                        C[ i_c ]    = c
+                        dCdU[ i_c ] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
+                                           + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
+                        i_c += L
+                    
+                    # Joint path chance constraint     
+                    if isinstance(const, JointChanceStateConstraint):
+                        p, dpdZ, dpdS = const(Z[i], S[i], step=n, grad=True)
+                        if n==0:
+                            if i==0:
+                                pj = np.zeros(self.num_models)
+                                dpjdZ = np.zeros((self.num_models,)+(1,)+Z[i].shape)
+                                dpjdS = np.zeros((self.num_models,)+(1,)+(self.num_meas,self.num_meas))
+                            pj[i] = p
+                            dpjdZ[i] = dpdZ
+                            dpjdS[i] = dpdS
+                        else:
+                            dpjdZ[i] += dpdZ
+                            dpjdS[i] += dpdS
+                            pj[i] += p
+                        
+                        if n==self.num_steps-1:
+                            C[ i_c ]    = pj[i]/self.num_steps - const.conf
+                            dCdU[ i_c ] = (1/self.num_steps)*(np.einsum('ij,jnk->ink',dpjdZ[i],dZdU[i]) \
+                                           + np.einsum('ijk,jknd->ind',dpjdS[i],dSdU[i]))
+                            i_c += 1
+
+                            
 
             # Divergence between predictive distributions at time n
             for i, model in enumerate( self.models ):
@@ -170,11 +218,6 @@ class ProblemInstance:
                 dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dZdU[:,:,j] ) \
                          + np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
 
-        #for const in self.z_constraints:
-            #if str(const.__class__) == 'JointTimeChanceStateConstraint':
-        #    C[ic_0:i_c] = (1-const.conf)-C[ic_0:i_c];
-        #print(C[ic_0:i_c])
-        
         # latent state constraints
         for i, model in enumerate( self.models ):
             res = model.get_x_constraints()
