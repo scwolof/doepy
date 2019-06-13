@@ -39,20 +39,23 @@ class StateConstraint:
             self.num_steps  = self.bounds.shape[0]
             self.num_states = self.bounds.shape[1]
         
-        if 'conf' in kwargs:
-            # Constant bounds
-            self.conf = kwargs['conf']
-            
-        
     @property
     def has_added_variables (self):
         return False
 
+    def sum_num_constraints (self):
+        # Total number of constraints constructed by class
+        raise NotImplementedError 
+    
     def num_constraints (self):
         # Number of individual constraints constructed by class
         raise NotImplementedError 
         
-    def __call__ (self, M, S, step=None, grad=False):
+    def calc_dCdU(self,dcdZ,dZdU,dcdS,dSdU):
+        # Calculate the gradient of the constraint related to U
+        return (np.einsum('ij,jnk->ink',dcdZ,dZdU) + np.einsum('ijk,jknd->ind',dcdS,dSdU))
+        
+    def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
         """
         Input:
         M   [ num_meas ]              Matrix of predictive means
@@ -76,10 +79,13 @@ class ConstantMeanStateConstraint (StateConstraint):
         super().__init__ (bounds)
         assert self.bounds.ndim == 2
 
+    def sum_num_constraints (self, num_steps, num_models):
+        return 2 * self.num_states * num_steps * num_models
+    
     def num_constraints (self):
         return 2 * self.num_states
         
-    def __call__ (self, M, S, step=None, grad=False):
+    def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
         #print( 'mean' )
         if grad:
@@ -96,7 +102,7 @@ class ConstantMeanStateConstraint (StateConstraint):
             if grad:
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
-        return C if not grad else (C, dCdM, dCdS)
+        return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS,dSdU))
         
 
 class MovingMeanStateConstraint (StateConstraint):
@@ -108,10 +114,13 @@ class MovingMeanStateConstraint (StateConstraint):
         super().__init__ (bounds)
         assert self.bounds.ndim == 3
 
+    def sum_num_constraints (self, num_steps, num_models):
+        return 2 * self.num_states * num_steps * num_models
+    
     def num_constraints (self):
         return 2 * self.num_states
         
-    def __call__ (self, M, S, step, grad=False):
+    def __call__ (self, M, S, dZdU, dSdU, step, grad=False):
         step = np.min(( self.num_steps-1, step ))
         C    = np.zeros( 2 * self.num_states )
         if grad:
@@ -124,7 +133,7 @@ class MovingMeanStateConstraint (StateConstraint):
             if grad:
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
-        return C if not grad else (C, dCdM, dCdS)
+        return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS,dSdU))
     
 
 class SingleChanceStateConstraint (StateConstraint):
@@ -142,10 +151,13 @@ class SingleChanceStateConstraint (StateConstraint):
         self.r = np.sqrt(2) * erfinv(self.conf)
         
 
+    def sum_num_constraints (self, num_steps, num_models):
+        return 2 * self.num_states * num_steps * num_models
+    
     def num_constraints (self):
         return 2 * self.num_states
     
-    def __call__ (self, M, S, step=None, grad=False):
+    def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
@@ -160,7 +172,7 @@ class SingleChanceStateConstraint (StateConstraint):
                 dCdM[2*i+1,i] = -1.
                 dCdS[2*i,  i, i] = -self.r/(2*np.sqrt(S[i,i]))
                 dCdS[2*i+1,i, i] = -self.r/(2*np.sqrt(S[i,i]))
-        return C if not grad else (C, dCdM, dCdS)
+        return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS,dSdU))
     
 class PointwiseChanceStateConstraint (StateConstraint):
     r"""    
@@ -176,10 +188,13 @@ class PointwiseChanceStateConstraint (StateConstraint):
         self.conf = conf
         
 
+    def sum_num_constraints (self, num_steps, num_models):
+        return num_steps * num_models
+    
     def num_constraints (self):
         return 1
     
-    def __call__ (self, M, S, step=None, grad=False):
+    def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
         C = np.zeros( 1 )
 
         if grad:
@@ -218,7 +233,7 @@ class PointwiseChanceStateConstraint (StateConstraint):
                 P = P + Pi - P*Pi
                 
         C = P - self.conf
-        return C if not grad else (C, dCdM, dCdS)
+        return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS,dSdU))
     
 class JointChanceStateConstraint (StateConstraint):
     r"""    
@@ -231,19 +246,30 @@ class JointChanceStateConstraint (StateConstraint):
         super().__init__ (bounds)
         assert self.bounds.ndim == 2
         self.conf = conf
-        
+        self.step = 0
+        self.num_steps = 0
 
-    def num_constraints (self):
-        return 1
+    def sum_num_constraints (self, num_steps, num_models):
+        self.num_steps = num_steps
+        return num_models
     
-    def __call__ (self, M, S, step=None, grad=False):
-        P = np.zeros( 1 )
+    def num_constraints (self):
+        if self.step == self.num_steps-1:
+            return 1
+        else:
+            return 0
+    
+    def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
+        self.P = np.zeros( 1 )
+        self.step = step
 
         if grad:
-            dPdM = np.zeros( P.shape + M.shape )
-            dPdS = np.zeros( P.shape + S.shape  )
+            self.dPdMc = np.zeros( self.P.shape + M.shape )
+            self.dPdSc = np.zeros( self.P.shape + S.shape  )
+            dPdM = np.zeros( self.P.shape + M.shape )
+            dPdS = np.zeros( self.P.shape + S.shape  )
         
-        P = 0;
+        Pp = 0;
         #Pi = np.zeros(self.num_states)
         for i in range(self.num_states):
             x1 = (self.bounds[i,0]-M[i])/(np.sqrt(S[i,i])*np.sqrt(2))
@@ -262,16 +288,30 @@ class JointChanceStateConstraint (StateConstraint):
                 dP1dS = (-1)*(self.bounds[i,0] - M[i])*np.exp((-1)*(x1**2))/(S[i,i]*np.sqrt(2)*np.sqrt(np.pi))
                 dP2dS = (-1)*(self.bounds[i,1] - M[i])*np.exp((-1)*(x2**2))/(S[i,i]*np.sqrt(2)*np.sqrt(np.pi))
                 dPidS = (dP2dS - dP1dS)
-                if P == 1:
+                if Pp == 1:
                     dPdM[0,i] = dPidM
                     dPdS[0,i,i] = dPidS
                 else:
-                    dPdM[0,i] = dPdM[0,i] + dPidM - (Pi*dPdM[0,i] + P*dPidM)
-                    dPdS[0,i,i] = dPdS[0,i,i] + dPidS - (Pi*dPdS[0,i,i] + P*dPidS)
+                    dPdM[0,i] = dPdM[0,i] + dPidM - (Pi*dPdM[0,i] + Pp*dPidM)
+                    dPdS[0,i,i] = dPdS[0,i,i] + dPidS - (Pi*dPdS[0,i,i] + Pp*dPidS)
             
-            if P == 1:
-                P = Pi
+            if Pp == 1:
+                Pp = Pi
             else:
-                P = P + Pi - P*Pi
+                Pp = Pp + Pi - Pp*Pi
                 
-        return P if not grad else (P, dPdM, dPdS)
+        
+        self.P += Pp
+        self.dPdMc += dPdM
+        self.dPdSc += dPdS
+        
+        if step == self.num_steps:
+            C = (self.P/self.num_steps) - self.conf
+            dCdM = self.dPdMc/self.num_steps
+            dCdS = self.dPdSc/self.num_steps
+            dCdU = self.calc_dCdU(dCdM,dZdU,dCdS,dSdU)
+        else:
+            C = 0
+            dCdU = 0
+                
+        return C if not grad else (C, dCdU)
