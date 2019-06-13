@@ -23,8 +23,7 @@ SOFTWARE.
 """
 
 import numpy as np
-import math
-from scipy import special as sp
+from scipy.special import erf, erfinv
 
 class StateConstraint:
     def __init__ (self, bounds, **kwargs):
@@ -43,8 +42,6 @@ class StateConstraint:
         if 'conf' in kwargs:
             # Constant bounds
             self.conf = kwargs['conf']
-            
-            
             
         
     @property
@@ -133,15 +130,16 @@ class MovingMeanStateConstraint (StateConstraint):
 class SingleChanceStateConstraint (StateConstraint):
     r"""    
     Chance constraint:
-        conf = probability
+        conf = confidence
         r = distance from the mean value for a defined tolerance
-        P(\mu_i(t)+r*S <= bounds[i,1]) > 1-conf
-        P(\mu_i(t)-r*S >= bounds[i,1]) > 1-conf
+        P( \mu_i(t) + alpha * S <= bounds[i,1] ) > conf
+        P( \mu_i(t) - alpha * S >= bounds[i,1] ) > conf
     """   
-    
-    def __init__ (self, bounds, **kwargs):
-        super().__init__ (bounds,**kwargs)
+    def __init__ (self, bounds, conf=0.95):
+        super().__init__ (bounds)
         assert self.bounds.ndim == 2
+        self.conf  = conf
+        self.r = np.sqrt(2) * erfinv(self.conf)
         
 
     def num_constraints (self):
@@ -149,57 +147,131 @@ class SingleChanceStateConstraint (StateConstraint):
     
     def __call__ (self, M, S, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
-        r = math.pow(2,0.5)*sp.erfinv(self.conf)
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
             dCdS = np.zeros( C.shape + S.shape )
         
         for i in range(self.num_states):
-            C[2*i]   = M[i] - r*np.sqrt(S[i,i]) - self.bounds[i,0];
-            C[2*i+1] = self.bounds[i,1]- r*np.sqrt(S[i,i]) - M[i];
+            C[2*i]   = M[i] - self.r*np.sqrt(S[i,i]) - self.bounds[i,0];
+            C[2*i+1] = self.bounds[i,1]- self.r*np.sqrt(S[i,i]) - M[i];
             
             if grad:
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
-                dCdS[2*i,  i] = -r/(2*np.sqrt(S[i,i]))
-                dCdS[2*i+1,i] = -r/(2*np.sqrt(S[i,i]))
+                dCdS[2*i,  i, i] = -self.r/(2*np.sqrt(S[i,i]))
+                dCdS[2*i+1,i, i] = -self.r/(2*np.sqrt(S[i,i]))
         return C if not grad else (C, dCdM, dCdS)
     
-class JointTimeChanceStateConstraint (StateConstraint):
+class PointwiseChanceStateConstraint (StateConstraint):
+    r"""    
+    Chance constraint:
+        One probability for each time step
+        conf = probability
+        P(C(ti) <= bounds[ti]) > 1-conf
+    """   
+    
+    def __init__ (self, bounds, conf=0.95):
+        super().__init__ (bounds)
+        assert self.bounds.ndim == 2
+        self.conf = conf
+        
+
+    def num_constraints (self):
+        return 1
+    
+    def __call__ (self, M, S, step=None, grad=False):
+        C = np.zeros( 1 )
+
+        if grad:
+            dCdM = np.zeros( C.shape + M.shape )
+            dCdS = np.zeros( C.shape + S.shape )
+        
+        P = 0;
+        #Pi = np.zeros(self.num_states)
+        for i in range(self.num_states):
+            x1 = (self.bounds[i,0]-M[i])/(np.sqrt(S[i,i])*np.sqrt(2))
+            x2 = (self.bounds[i,1]-M[i])/(np.sqrt(S[i,i])*np.sqrt(2))
+            
+            Pi1 = 0.5*(1+ erf(x1))
+            Pi2 = 0.5*(1+ erf(x2))
+            
+            Pi = Pi2 - Pi1
+            #print(Pi)
+            
+            if grad:
+                dP1dM = (-1)*np.exp((-1)*(x1**2))/(np.sqrt(S[i,i])*np.sqrt(2)*np.sqrt(np.pi))
+                dP2dM = (-1)*np.exp((-1)*(x2**2))/(np.sqrt(S[i,i])*np.sqrt(2)*np.sqrt(np.pi))
+                dPidM = (dP2dM - dP1dM)
+                dP1dS = (-1)*(self.bounds[i,0] - M[i])*np.exp((-1)*(x1**2))/(S[i,i]*np.sqrt(2)*np.sqrt(np.pi))
+                dP2dS = (-1)*(self.bounds[i,1] - M[i])*np.exp((-1)*(x2**2))/(S[i,i]*np.sqrt(2)*np.sqrt(np.pi))
+                dPidS = (dP2dS - dP1dS)
+                if P == 1:
+                    dCdM[0,i] = dPidM
+                    dCdS[0,i,i] = dPidS
+                else:
+                    dCdM[0,i] = dCdM[0,i] + dPidM - (Pi*dCdM[0,i] + P*dPidM)
+                    dCdS[0,i,i] = dCdS[0,i,i] + dPidS - (Pi*dCdS[0,i,i] + P*dPidS)
+            
+            if P == 1:
+                P = Pi
+            else:
+                P = P + Pi - P*Pi
+                
+        C = P - self.conf
+        return C if not grad else (C, dCdM, dCdS)
+    
+class JointChanceStateConstraint (StateConstraint):
     r"""    
     Chance constraint:
         P1(\mu_i(t)+r*S <= bounds[i,1]) > 1-eps
         P2(\mu_i(t)-r*S >= bounds[i,1]) > 1-eps
     """   
     
-    def __init__ (self, bounds,**kwargs):
-        super().__init__ (bounds,**kwargs)
+    def __init__ (self, bounds,conf=0.95):
+        super().__init__ (bounds)
         assert self.bounds.ndim == 2
+        self.conf = conf
         
 
     def num_constraints (self):
-        return 2 * self.num_states
+        return 1
     
     def __call__ (self, M, S, step=None, grad=False):
-        C = np.zeros( 2 * self.num_states )
-        
+        P = np.zeros( 1 )
+
         if grad:
-            dCdM = np.zeros( C.shape + M.shape )
-            dCdS = np.zeros( C.shape + S.shape )
+            dPdM = np.zeros( P.shape + M.shape )
+            dPdS = np.zeros( P.shape + S.shape  )
         
+        P = 0;
+        #Pi = np.zeros(self.num_states)
         for i in range(self.num_states):
-            r1 = (M[i] - self.bounds[i,0])/np.sqrt(S[i,i])
-            r2 = (self.bounds[i,1] - M[i])/np.sqrt(S[i,i])
-            P1 = 1-(0.5+0.5*sp.erf(r1/(math.pow(2,0.5))))
-            P2 = 1-(0.5+0.5*sp.erf(r2/(math.pow(2,0.5))))
+            x1 = (self.bounds[i,0]-M[i])/(np.sqrt(S[i,i])*np.sqrt(2))
+            x2 = (self.bounds[i,1]-M[i])/(np.sqrt(S[i,i])*np.sqrt(2))
             
-            C[2*i]   = P1
-            C[2*i+1] = P2
+            Pi1 = 0.5*(1+ erf(x1))
+            Pi2 = 0.5*(1+ erf(x2))
+            
+            Pi = Pi2 - Pi1
+            #print(Pi)
             
             if grad:
-                dCdM[2*i,  i] = -math.exp(-math.pow(M[i]- self.bounds[i,0],2)/(2*S[i,i]))/(np.sqrt(2*math.pi*S[i,i]))
-                dCdM[2*i+1,i] = -math.exp(-math.pow(self.bounds[i,1] - M[i],2)/(2*S[i,i]))/(np.sqrt(2*math.pi*S[i,i]))
-                dCdS[2*i,  i] = (M[i]-self.bounds[i,0])*math.exp(-math.pow(M[i]- self.bounds[i,0],2)/(2*S[i,i]))/(np.sqrt(2*math.pi)*S[i,i])
-                dCdS[2*i+1,i] = (self.bounds[i,1] - M[i])*math.exp(-math.pow(self.bounds[i,1] - M[i],2)/(2*S[i,i]))/(np.sqrt(2*math.pi)*S[i,i])
-        return C if not grad else (C, dCdM, dCdS)
-
+                dP1dM = (-1)*np.exp((-1)*(x1**2))/(np.sqrt(S[i,i])*np.sqrt(2)*np.sqrt(np.pi))
+                dP2dM = (-1)*np.exp((-1)*(x2**2))/(np.sqrt(S[i,i])*np.sqrt(2)*np.sqrt(np.pi))
+                dPidM = (dP2dM - dP1dM)
+                dP1dS = (-1)*(self.bounds[i,0] - M[i])*np.exp((-1)*(x1**2))/(S[i,i]*np.sqrt(2)*np.sqrt(np.pi))
+                dP2dS = (-1)*(self.bounds[i,1] - M[i])*np.exp((-1)*(x2**2))/(S[i,i]*np.sqrt(2)*np.sqrt(np.pi))
+                dPidS = (dP2dS - dP1dS)
+                if P == 1:
+                    dPdM[0,i] = dPidM
+                    dPdS[0,i,i] = dPidS
+                else:
+                    dPdM[0,i] = dPdM[0,i] + dPidM - (Pi*dPdM[0,i] + P*dPidM)
+                    dPdS[0,i,i] = dPdS[0,i,i] + dPidS - (Pi*dPdS[0,i,i] + P*dPidS)
+            
+            if P == 1:
+                P = Pi
+            else:
+                P = P + Pi - P*Pi
+                
+        return P if not grad else (P, dPdM, dPdS)

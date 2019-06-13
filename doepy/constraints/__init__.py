@@ -1,4 +1,5 @@
 
 from .control_constraints import ControlConstraint, ControlDeltaConstraint
 from .state_constraints import (StateConstraint, ConstantMeanStateConstraint,
-	MovingMeanStateConstraint, SingleChanceStateConstraint, JointTimeChanceStateConstraint)
+	MovingMeanStateConstraint, SingleChanceStateConstraint, 
+    PointwiseChanceStateConstraint, JointChanceStateConstraint)
