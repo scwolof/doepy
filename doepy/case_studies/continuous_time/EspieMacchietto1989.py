@@ -53,9 +53,9 @@ class Model:
 		self.Q = np.zeros((2,2))     # Process noise covariance
 		self.R = 0.2**2 * np.eye(2)  # Measurement noise covariance
 
-		self.S_u  = 1e-6 * np.eye(self.num_inputs)
+		self.S_u  = np.diag([1e-6, 1e-3])
 		self.x0   = np.array([ 1.0, 0.01 ])
-		self.S_x0 = 1e-6 * np.eye(self.num_states)
+		self.S_x0 = np.diag([1e-3, 1e-6])
 		self.x0_bounds = np.array([[1, 10], [0.01, 0.01]])
 
 		self.T  = 72.0
@@ -88,11 +88,11 @@ class Model:
 
 	@property
 	def p0_covar (self):
-		return 1e-6 * np.eye( self.num_param )
+		return 1e-4 * np.eye( self.num_param )
 
 	@property
 	def p_bounds (self):
-		return np.array([[0., 1.]] * self.num_param)
+		return np.array([[0.01, 1.]] * self.num_param)
 
 
 class M1 (Model):
@@ -106,7 +106,7 @@ class M1 (Model):
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
         u1, u2 = u
-        p1, p2, p3, p4 = p 
+        p1, p2, p3, p4 = p
 
         r   = p1*x2 / ( p2 + x2 )
         dx1 = (r - p4 - u1) * x1
@@ -181,7 +181,7 @@ class M2 (Model):
     """
     def __init__ (self):
         super().__init__('M2')
-        self.p0        = np.array([ 0.3, 0.03, 0.55, 0.03 ])
+        self.p0 = np.array([ 0.3, 0.03, 0.55, 0.03 ])
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
@@ -405,12 +405,11 @@ class M4 (Model):
 class DataGen (M1):
 	def __init__ (self):
 		super().__init__()
-		self.p0         = []
-		self.true_param = np.array([ 0.31, 0.18, 0.55, 0.03 ])
-		#self.num_param  = 0
+		self.p0     = []
+		self.p_true = np.array([ 0.31, 0.18, 0.55, 0.03 ])
 
 	def __call__ (self, x, u):
-		return super().__call__(x, u, self.true_param)
+		return super().__call__(x, u, self.p_true)
 
 
 def get ():
