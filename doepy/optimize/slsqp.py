@@ -7,7 +7,7 @@ import numpy as np
 from scipy.optimize._slsqp import slsqp as scipy_slsqp
 
 def slsqp (problem_instance, u0, maxiter=30, ftol=1.0E-5, log_callback=None,
-           stepdesc=0.1, qptol=1e-6, debug=False):
+           maxinneriter=10, stepdesc=0.1, qptol=1e-6, debug=False):
     """
     Wrapping function for scipy SLSQP function to solve control problems with
     inequality constraints.
@@ -73,9 +73,11 @@ def slsqp (problem_instance, u0, maxiter=30, ftol=1.0E-5, log_callback=None,
 
     # Initialize internal SLSQP state variables
     f0, gs, h1, h2, h3, h4, t, t0 = [ np.array(0, float) ] * 8
-    iexact, incons, ireset, line, itermx, n1, n2, n3 = [ np.array(0, int) ] * 8
-    alpha = np.array(stepdesc, float)
-    tol   = np.array(qptol, float)
+    #iexact, incons, ireset, line, itermx, n1, n2, n3 = [ np.array(0, int) ] * 8
+    iexact, incons, ireset, line, n1, n2, n3 = [ np.array(0, int) ] * 7
+    alpha  = np.array(stepdesc, float)
+    tol    = np.array(qptol, float)
+    itermx = np.array(maxinneriter, int)
 
     # Rescaling factor to try to recover from mode 8 "Positive directional 
     # derivative for linesearch" when running SLSQP optimisation algorithm
@@ -123,11 +125,14 @@ def slsqp (problem_instance, u0, maxiter=30, ftol=1.0E-5, log_callback=None,
             if np.any([np.any(np.isnan(mat)) for mat in [u, f, c, df, dc]]):
                 mode = 10
                 break
-            
+
         # Call SLSQP
         scipy_slsqp(m, 0, u, ul, uu, f, c, df, dc, acc, majiter, mode, w, jw,
                     alpha, f0, gs, h1, h2, h3, h4, t, t0, tol,
                     iexact, incons, ireset, itermx, line, n1, n2, n3)
+
+        # Enforce maximum number of iterations
+        itermx = np.array(maxiter, int)
 
         if debug and mode == 1:
             fnorm, cnorm = np.linalg.norm(df), np.linalg.norm(dc)
