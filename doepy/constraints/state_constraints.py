@@ -39,6 +39,10 @@ class StateConstraint:
             self.num_steps  = self.bounds.shape[0]
             self.num_states = self.bounds.shape[1]
         
+        if 'conf' in kwargs:
+            # Constant bounds
+            self.conf = kwargs['conf']
+            
     @property
     def has_added_variables (self):
         return False

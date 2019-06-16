@@ -1,4 +1,5 @@
 __version__      = '0.1'
-__author__       = 'Simon Olofsson'
+__copyright__    = 'Copyright 2019, Simon Olofsson and Eduardo Schultz'
+__author__       = 'Simon Olofsson and Eduardo Schultz'
 __author_email__ = 'simon.olofsson15@imperial.ac.uk'
 __license__      = 'MIT License'

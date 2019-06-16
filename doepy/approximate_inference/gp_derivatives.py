@@ -26,18 +26,40 @@ import numpy as np
 
 from GPy.kern import RBF, Exponential, Matern32, Matern52, RatQuad, Cosine 
 
-def d_pred_d_x (gps, xnew, diag=False):
-	E,D  = len(gps), len(xnew)
-	dm   = np.zeros((E,D))
-	ds   = np.zeros((E,E,D)) if diag else np.zeros((E,D))
+def d_pred_d_x (gps, xnew, mean_only=False, diag=False):
+	E,D = len(gps), len(xnew)
+	dm  = np.zeros((E,D))
+	ds  = np.zeros((E,E,D))
 	for e,gp in enumerate(gps):
-		tmp   = gp.predictive_gradients(xnew[None,:])
-		dm[e] = tmp[0][0,:,0]
-		if diag:
-			ds[e,e] = tmp[1][0]
+		if mean_only:
+			dm[e]   = d_m_d_x(gp, xnew[None,:])[0,:,0]
 		else:
-			ds[e] = tmp[1][0]
+			tmp     = gp.predictive_gradients(xnew[None,:])
+			dm[e]   = tmp[0][0,:,0]
+			ds[e,e] = tmp[1][0]
+	if mean_only:
+		return dm
+	if not diag:
+		ds = np.array([ds[e,e] for e in range(E)])
 	return dm, ds
+
+def d_m_d_x (gp, xnew):
+	"""
+	This function is copied from the GPy package 
+	
+	https://github.com/SheffieldML/GPy/blob/devel/GPy/kern/src/stationary.py
+	Copyright (c) 2012, GPy authors (see AUTHORS.txt).
+	Licensed under the BSD 3-clause license (see LICENSE.txt)
+	"""
+	if xnew.ndim == 1:
+		xnew = xnew[None,:]
+	dMdx = np.empty((xnew.shape[0], xnew.shape[1], gp.output_dim))
+
+	for i in range(gp.output_dim):
+		dMdx[:, :, i] = gp.kern.gradients_X(
+		                        gp.posterior.woodbury_vector[:, i:i+1].T, xnew,
+		                        gp._predictive_variable)
+	return dMdx
 
 def d2_m_d_x2 (gps, xnew):
 	E, D = len(gps), len(xnew)

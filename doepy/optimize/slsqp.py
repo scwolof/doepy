@@ -18,6 +18,7 @@ def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None,
     qptol : tolerance used for the qp solver. It is used for constraint tolerance
     debug:  False = print no information
             True  = print iterations calculations
+
     """
     # Transform u0 into an array.
     u = np.asfarray(u0).flatten()
@@ -76,6 +77,7 @@ def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None,
     alpha, f0, gs, h1, h2, h3, h4, t, t0, tol = [ np.array(0, float) ] * 10
     iexact, incons, ireset, itermx, line, n1, n2, n3 = [ np.array(0, int) ] * 8
 
+
     # Rescaling factor to try to recover from mode 8 "Positive directional 
     # derivative for linesearch" when running SLSQP optimisation algorithm
     saved_f        = []
@@ -85,7 +87,6 @@ def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None,
         print("%5s %16s %16s %16s %16s" % ("NIT", "OBJFUN", "FNORM", "CMIN", "CNORM"))
 
     while 1:
-
         if mode == 0 or mode == 1: 
             """
             Update objective function and constraints, as well as their 
@@ -102,8 +103,7 @@ def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None,
                 else:
                     rescale_factor = 1.
                 #print('Initial rescaling: %f'%(rescale_factor))
-                
-    
+
             # Write to log
             if log_callback is not None:
                 log_callback(u, f, c, df, dc, rescale_factor)
@@ -118,7 +118,6 @@ def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None,
             f  = float(np.asarray(f)) * rescale_factor
             df = np.append(df, 0.0) * rescale_factor
             dc = np.c_[ dc, np.zeros( la ) ]
-            
 
             if np.any([np.any(np.isnan(mat)) for mat in [u, f, c, df, dc]]):
                 mode = 10
