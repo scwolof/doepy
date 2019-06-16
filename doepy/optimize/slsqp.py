@@ -140,7 +140,7 @@ def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None,
         # HOWEVER: we do not necessarily want to terminate on mode 8
         if abs(mode) != 1:
             if mode == 8:
-                alpha = alpha/10;
+                alpha = 0.5 * (1. + alpha)
             else:
                 break
 
