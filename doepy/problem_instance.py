@@ -72,7 +72,7 @@ class ProblemInstance:
 		return U, np.all( C )
 
 
-	def __call__ (self, u_flat):
+	def __call__ (self, u_flat, grad=True):
 		E = self.num_meas
 		N = self.num_steps
 		M = self.num_models
@@ -82,20 +82,24 @@ class ProblemInstance:
 		U = u_flat.reshape(( N, D ))
 
 		# Objective
-		f    = 0.
-		dfdU = np.zeros( U.shape )
+		f = 0.
+		if grad:
+			dfdU = np.zeros( U.shape )
 		# Constraints
-		C    = np.zeros( self.num_constraints )
-		dCdU = np.zeros((self.num_constraints,) + U.shape )
+		C = np.zeros( self.num_constraints )
+		if grad:
+			dCdU = np.zeros((self.num_constraints,) + U.shape )
 
 		# Constraint counter
 		i_c = 0
 		# Control constraints
 		for const in self.u_constraints:
-			c, dc = const( U, grad=True )
-			L     = const.num_constraints(self.num_steps)
-			C[ i_c: i_c+L ]    = c
-			dCdU[ i_c: i_c+L ] = dc
+			L = const.num_constraints(self.num_steps)
+			c = const( U, grad=grad )
+			if grad:
+				c, dc = c
+				dCdU[ i_c: i_c+L ] = dc
+			C[ i_c: i_c+L ] = c
 			i_c += L
 
 		# Initial states
@@ -103,69 +107,86 @@ class ProblemInstance:
 		for model in self.models:
 			x.append( model.x0 )
 			s.append( model.x0_covar )
-			dxdU.append( np.zeros(( N, model.num_states, D)) )
-			dsdU.append( np.zeros(( N, model.num_states, model.num_states, D)) )
+			if grad:
+				dxdU.append( np.zeros((N, model.num_states, D)))
+				dsdU.append( np.zeros((N, model.num_states, model.num_states, D)))
+			else:
+				dxdU.append( [] )
+				dsdU.append( [] )
 			model.initialise_x_constraints()
 		Z = np.zeros(( M, E ))
 		S = np.zeros(( M, E, E ))
-		dZdU = np.zeros(( M, E, N, D))
-		dSdU = np.zeros(( M, E, E, N, D))
+		if grad:
+			dZdU = np.zeros(( M, E, N, D))
+			dSdU = np.zeros(( M, E, E, N, D))
 
+		# Gradient chain rule function
 		def gradchain (do, dxdU, dsdU, i, j):
 			dMdU = np.matmul( do.dMdx, dxdU[i][j] ) \
 			            + np.einsum( 'ijk,jkn->in', do.dMds, dsdU[i][j] )
 			dSdU = np.matmul( do.dSdx, dxdU[i][j] ) \
 			            + np.einsum( 'imjk,jkn->imn', do.dSds, dsdU[i][j] )
 			return dMdU, dSdU
-			       
 
 		# Iterate over control sequence
 		for n, u in enumerate( U ):
-			dZdU.fill(0.)
-			dSdU.fill(0.)
+			if grad:
+				dZdU.fill(0.)
+				dSdU.fill(0.)
 
 			# Predictive distributions at time n for model i
 			for i, model in enumerate( self.models ):
-				x[i], s[i], dox = model.predict_x_dist(x[i], s[i], u, grad=True)
-				Z[i], S[i], doy = model.predict_z_dist(x[i], s[i], grad=True)
-				for j in range( n+1 ):
-					dxdU[i][j], dsdU[i][j] = gradchain(dox, dxdU, dsdU, i, j)
-					if j == n:
-						dxdU[i][j] += dox.dMdu
-						dsdU[i][j] += dox.dSdu
-					dZdU[i,:,j], dSdU[i,:,:,j] = gradchain(doy, dxdU, dsdU, i, j)
+				if grad:
+					x[i], s[i], dox = model.predict_x_dist(x[i], s[i], u, grad=True)
+					Z[i], S[i], doy = model.predict_z_dist(x[i], s[i], grad=True)
+					for j in range( n+1 ):
+						dxdU[i][j],dsdU[i][j] = gradchain(dox,dxdU,dsdU,i,j)
+						if j == n:
+							dxdU[i][j] += dox.dMdu
+							dsdU[i][j] += dox.dSdu
+						dZdU[i,:,j],dSdU[i,:,:,j] = gradchain(doy,dxdU,dsdU,i,j)
+				else:
+					x[i], s[i] = model.predict_x_dist(x[i], s[i], u)
+					Z[i], S[i] = model.predict_z_dist(x[i], s[i])
 
 				# Update latent state constraints
-				model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
+				model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i], grad=grad)
 
 				# State constraint for model i at time n
 				for const in self.z_constraints:
-					c, dcdZ, dcdS = const(Z[i], S[i], step=n, grad=True)
 					L = const.num_constraints()
-					C[ i_c: i_c+L ]    = c
-					dCdU[ i_c: i_c+L ] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i]) \
-					                   + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
+					c = const(Z[i], S[i], step=n, grad=grad)
+					if grad:
+						c, dcdZ, dcdS    = c
+						dCdU[i_c: i_c+L] = np.einsum('ij,jnk->ink',dcdZ,dZdU[i])\
+					                     + np.einsum('ijk,jknd->ind',dcdS,dSdU[i])
+					C[ i_c: i_c+L ] = c
 					i_c += L
 
 			# Divergence between predictive distributions at time n
 			for i, model in enumerate( self.models ):
 				# Add measurement noise covariance
 				S[i] += model.y_covar
-			ftmp, dDdY, dDdS = self.divergence(Z, S, grad=True)
+			ftmp = self.divergence(Z, S, grad=grad)
+			if grad:
+				ftmp, dDdY, dDdS = self.divergence(Z, S, grad=True)
+				for j in range( n+1 ):
+					dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dZdU[:,:,j] ) \
+				             + np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
 			f -= ftmp   ## Minimisation -> negative maximisation
-			for j in range( n+1 ):
-				dfdU[j] -= np.einsum('ij,ijk->k', dDdY, dZdU[:,:,j] ) \
-				         + np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
 
 		# latent state constraints
 		for i, model in enumerate( self.models ):
-			res = model.get_x_constraints()
+			res = model.get_x_constraints(grad=grad)
 			if not res is None:
 				L = res[0].shape[0]
 				C[ i_c: i_c+L ]    = res[0]
-				dCdU[ i_c: i_c+L ] = res[1]
+				if grad:
+					dCdU[ i_c: i_c+L ] = res[1]
 				i_c += L
 
+		if not grad:
+			return f, C
 		# flatten
 		dfdU = dfdU.reshape(u_flat.shape)
 		dCdU = dCdU.reshape((-1,) + u_flat.shape)
