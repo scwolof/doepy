@@ -105,10 +105,10 @@ class StateSpaceModel (Model):
 	def initialise_x_constraints (self):
 		pass
 
-	def update_x_constraints (self, x, s, dxdU, dsdU, step=None):
+	def update_x_constraints (self, x, s, dxdU, dsdU, step=None, grad=False):
 		pass
 
-	def get_x_constraints (self):
+	def get_x_constraints (self, grad=False):
 		return None
 
 	def num_x_constraints (self):

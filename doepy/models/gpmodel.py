@@ -186,24 +186,30 @@ class GPModel:
 		self.x_constraints = ConstantMeanStateConstraint(bounds)
 		self.c, self.dcdU  = None, None
 
-	def update_x_constraints (self, x, s, dxdU, dsdU, step=None):
+	def update_x_constraints (self, x, s, dxdU=[], dsdU=[], step=None, grad=False):
 		if self.x_constraints is None:
 			self.initialise_x_constraints()
-		c, dcdx, dcds = self.x_constraints(x, s, grad=True)
-		dcdU = np.einsum('ij,njk->ink',dcdx,dxdU) \
-			   + np.einsum('ijk,njkd->ind',dcds,dsdU)
+		c = self.x_constraints(x, s, grad=grad)
+		if grad:
+			c, dcdx, dcds = c
+			dcdU = np.einsum('ij,njk->ink',dcdx,dxdU) \
+			     + np.einsum('ijk,njkd->ind',dcds,dsdU)
 		if self.c is None:
-			self.c    = c[None,:]
-			self.dcdU = dcdU[None,:]
+			self.c = c[None,:]
+			if grad:
+				self.dcdU = dcdU[None,:]
 		else:
-			self.c    = np.vstack((self.c, c))
-			self.dcdU = np.vstack((self.dcdU, dcdU[None,:]))
+			self.c = np.vstack((self.c, c))
+			if grad:
+				self.dcdU = np.vstack((self.dcdU, dcdU[None,:]))
 
-	def get_x_constraints (self):
+	def get_x_constraints (self, grad=False):
 		if self.x_constraints is None:
 			return None
-		i,j,k,l = self.dcdU.shape
-		return self.c.reshape((i*j)), self.dcdU.reshape((i*j,k,l))
+		if grad:
+			i,j,k,l = self.dcdU.shape
+			return self.c.reshape((i*j)), self.dcdU.reshape((i*j,k,l))
+		return self.c.flatten(), None
 
 	def num_x_constraints (self):
 		return 2 * self.num_states
