@@ -72,7 +72,9 @@ class Derivatives:
 		D = self.__dict__
 		for d in D:
 			if d in do.__dict__:
-				t    = getattr(self,d)
+				t = getattr(self,d)
+				if not isinstance(t, np.ndarray):
+					continue
 				t[n] = getattr(do,d)
 
 	def _assert_has_derivative (self, x):
