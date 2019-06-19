@@ -28,6 +28,7 @@ from scipy.integrate import solve_ivp
 
 from ..derivatives import LatentStateDerivatives
 from ..statespacemodel import StateSpaceModel
+from ...derivatives import Derivatives
 from ...utils import assert_is_shape
 
 class ctModel (StateSpaceModel):
@@ -65,208 +66,169 @@ class ctModel (StateSpaceModel):
 		vk = mvn( np.zeros(self.num_meas), self.y_covar )
 		return xy[0] + wk, xy[1] + vk
 	
-	def _ode_vector_merge (self, x, S, do=None, grad=False):
-		assert_is_shape(x, (self.num_states,))
-		assert_is_shape(S, (self.num_states, self.num_states))
-		
+	def _ode_mean_var_merge (self, x, S, u):
+		mean = (x, u) 
+		var  = (S, self.u_covar)
+		if self.num_param > 0: 
+			mean += ( self.p_mean, )
+			var  += ( self.p_covar, )
+		mean = np.concatenate(mean)
+		var  = block_diag(*var)
+		return mean, var
+	
+	def _ode_mean_var_unmerge (self, mean, var, do=None, grad=False):
+		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
+		x, S = mean[:Dx], var[:Dx,:Dx]
+		domm = LatentStateDerivatives(self)
+		if grad:
+			domm.dMdx = do.dMdx[:Dx,:Dx]
+			domm.dMdu = do.dMdx[:Dx,Dx:(Dx+Du)]
+			domm.dMds = do.dMds[:Dx,:Dx,:Dx]
+			domm.dSdx = do.dSdx[:Dx,:Dx,:Dx]
+			domm.dSdu = do.dSdx[:Dx,:Dx,Dx:(Dx+Du)]
+			domm.dSds = do.dSds[:Dx,:Dx,:Dx,:Dx]
+			if Dp > 0:
+				domm.dMdp = do.dMdx[:Dx,-Dp:]
+				domm.dSdp = do.dSdx[:Dx,:Dx,-Dp:]
+		return x, S, domm
+
+	def _ode_vector_merge (self, mean, var, do=None, grad=False):
+		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
+		D = Dx + Du + Dp
+		assert_is_shape(mean, (D,))
+		assert_is_shape(var, (D, D))
+
 		# Mean, covariance and input-output covariance
-		xs = ( x[:,None], S )
+		xs = ( mean[:,None], var )
 		
-		if do is None:
-			do = LatentStateDerivatives(self)
-			do.dMdx = np.eye(self.num_states)
-			if grad:
-				do.dSds = np.eye(self.num_states)[:,None,:,None] \
-				          * np.eye(self.num_states)[None,:,None,:]
-		
-		# dMdx, dMdu, dMdp
-		xs += ( do.dMdx, do.dMdu )
-		if self.num_param > 0:
-			xs  += ( do.dMdp, )
 		if not grad:
 			return np.concatenate(xs, axis=1).T.flatten()
-		
-		# dMds, dSdx, dSdu, dSdp
-		xs += ( do.dMds.reshape(( self.num_states, -1 )),
-				do.dSdx.reshape(( self.num_states, -1 )),
-				do.dSdu.reshape(( self.num_states, -1 )) )
-		if self.num_param > 0:
-			xs  += ( do.dSdp.reshape(( self.num_states, -1 )), )
-		# dSds
-		xs += ( do.dSds.reshape(( self.num_states, -1 )), )
 
-		# dMdxx
-		xs += ( do.dMdxx.reshape(( self.num_states, -1 )), )
-		# dMdxu
-		xs += ( do.dMdxu.reshape(( self.num_states, -1 )), )
-		# dMduu
-		xs += ( do.dMduu.reshape(( self.num_states, -1 )), )
-		if self.num_param > 0:
-			# dMdxp
-			xs += ( do.dMdxp.reshape(( self.num_states, -1 )), )
-			# dMdup
-			xs += ( do.dMdup.reshape(( self.num_states, -1 )), )
-			# dMdpp
-			xs += ( do.dMdpp.reshape(( self.num_states, -1 )), )
-		
+		if do is None:
+			do = Derivatives(D, num_states=D)
+			do.dMdx = np.eye(D)
+			do.dSds = np.eye(D)[:,None,:,None] * np.eye(D)[None,:,None,:]
+			
+		# dMdx
+		xs += ( do.dMdx, )
+		# dMds, dSdx
+		xs += ( do.dMds.reshape(( D, -1 )),
+				do.dSdx.reshape(( D, -1 )) )
+		# dSds
+		xs += ( do.dSds.reshape(( D, -1 )), )
+
 		return np.concatenate(xs, axis=1).T.flatten()
-	
+
 	def _ode_vector_unmerge (self, X, grad=False):
+		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
+		D = Dx + Du + Dp
 		# Mean x
 		d = [1]
 		# Covariance S
-		d += [ self.num_states ]
-		
-		# dMdx, dMdu, dMdp
-		d += [self.num_states, self.num_inputs, self.num_param]
+		d += [ D ]
 
 		if grad:
-			# dMds
-			d += [ self.num_states*self.num_states ]
-			# dSdx, dSdu, dSdp
-			d += [ self.num_states*self.num_states ]
-			d += [ self.num_states*self.num_inputs ]
-			d += [ self.num_states*self.num_param ]
-			# dSds
-			d += [ self.num_states*self.num_states*self.num_states ]
-			# dMdxx, dMdxu, dMduu
-			d += [ self.num_states*self.num_states ]
-			d += [ self.num_states*self.num_inputs ]
-			d += [ self.num_inputs*self.num_inputs ]
-			if self.num_param > 0:
-				# dMdxp, dMdup, dMdpp
-				d += [ self.num_states*self.num_param ]
-				d += [ self.num_inputs*self.num_param ]
-				d += [ self.num_param*self.num_param ]
-			
-		D = np.cumsum( d )
-		X = X.reshape((D[-1], self.num_states)).T
-		
-		x = X[:,0];
-		i = 0
-		S = X[:,D[i]:D[i+1]]; i+= 1
-		
-		do = LatentStateDerivatives(self)
-		Dx = (self.num_states,)
-		Du = (self.num_inputs,)
-		Dp = (self.num_param,)
-		
-		do.dMdx = X[:,D[i]:D[i+1]]; i+= 1
-		do.dMdu = X[:,D[i]:D[i+1]]; i+= 1
-		if self.num_param > 0:
-			do.dMdp = X[:,D[i]:D[i+1]]
-		i+= 1
+			# dMdx, dMds, dSdx, dSds
+			d += [ D, D*D, D*D, D*D*D ]
+
+		Ds = np.cumsum( d )
+		X  = X.reshape((Ds[-1], D)).T
+
+		x  = X[:,0]
+		i  = 0
+		S  = X[:,Ds[i]:Ds[i+1]]; i+= 1
+		do = Derivatives(D, num_states=D)
 		if not grad:
 			return x, S, do
 
-		do.dMds = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-		do.dSdx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-		do.dSdu = X[:,D[i]:D[i+1]].reshape(Dx*2+(self.num_inputs,)); i+= 1
-		if self.num_param > 0:
-			do.dSdp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp)
-		i+= 1
-		do.dSds = X[:,D[i]:D[i+1]].reshape(Dx*4); i+= 1
+		do.dMdx = X[:,Ds[i]:Ds[i+1]]; i+= 1
+		do.dMds = X[:,Ds[i]:Ds[i+1]].reshape((D,D,D)); i+= 1
+		do.dSdx = X[:,Ds[i]:Ds[i+1]].reshape((D,D,D)); i+= 1
+		do.dSds = X[:,Ds[i]:Ds[i+1]].reshape((D,D,D,D)); i+= 1
 
-		do.dMdxx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-		do.dMdxu = X[:,D[i]:D[i+1]].reshape(Dx*2+Du); i+= 1
-		do.dMduu = X[:,D[i]:D[i+1]].reshape(Dx+Du*2); i+= 1
-		if self.num_param > 0: 
-			do.dMdxp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp); i+= 1
-			do.dMdup = X[:,D[i]:D[i+1]].reshape(Dx+Du+Dp); i+= 1
-			do.dMdpp = X[:,D[i]:D[i+1]].reshape(Dx+Dp*2); i+= 1
-		
 		return x, S, do
+	
+	def _get_ode_mean_grad (self, do, grad=False):
+		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
+		D    = np.cumsum([Du+Dp, Dx])
+		domm = Derivatives(D[1], num_states=D[1])
+		
+		dMs = (do.dMdx, do.dMdu)
+		if self.num_param > 0:
+			dMs += (do.dMdp,)
+		dMs = np.concatenate(dMs, axis=1)
+		domm.dMdx = np.vstack(( dMs, np.zeros((D[0], D[1])) ))
+		
+		if not grad:
+			return domm
+		
+		ddM = np.zeros((D[1], D[1], D[1]))
+		ddM[:Dx,:Dx,:Dx] = do.dMdxx
+		ddM[:Dx,:Dx,Dx:Dx+Du] = do.dMdxu
+		ddM[:Dx,Dx:Dx+Du,:Dx] = np.transpose(do.dMdxu,[0,2,1])
+		ddM[:Dx,Dx:Dx+Du,Dx:Dx+Du] = do.dMduu
+		if Dp > 0:
+			ddM[:Dx,:Dx,-Dp:] = do.dMdxp
+			ddM[:Dx,-Dp:,:Dx] = np.transpose(do.dMdxp, [0,2,1])
+			ddM[:Dx,-Dp:,-Dp:] = do.dMdpp
+			ddM[:Dx,Dx:Dx+Du,-Dp:] = do.dMdup
+			ddM[:Dx,-Dp:,Dx:Dx+Du] = np.transpose(do.dMdup, [0,2,1])
+		domm.dMdxx = ddM
+		
+		return domm
 
-	def _ode_moment_match (self, x, S, u, grad=False):
-		input_mean, _ = self.get_input_mean_and_cov(x, S, u)
-
-		dM, do = self.f( *input_mean, grad=True )
-		dS     = self.x_covar + np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
+	def _ode_moment_match (self, M, S, grad=False):
+		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
+		D = self.num_states + self.num_inputs + self.num_param
+		
+		input_mean = (M[:Dx], M[Dx:(Dx+Du)])
+		if Dp > 0:
+			input_mean += ( M[(Dx+Du):], )
+			
+		dx, do = self.f( *input_mean, grad=True )
+		do = self._get_ode_mean_grad(do, grad=grad) 
+		dM = np.zeros(D)
+		dM[:self.num_states] = dx
+		
+		Sw = np.zeros((D,D))
+		Sw[:Dx, :Dx] = self.x_covar
+		
+		dS = np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T) + Sw
 		if not grad:
 			return dM, dS, do
 
-		I = np.eye(self.num_states)[:,None,:,None] \
-		    * np.eye(self.num_states)[None,:,None,:]
+		I = np.eye(D)[:,None,:,None] * np.eye(D)[None,:,None,:]
 		do.dSdx  = np.einsum("kj,ijn->kin", S, do.dMdxx)
 		do.dSdx += np.transpose(do.dSdx, [1,0,2])
-		do.dSdu  = np.einsum("kj,ijn->kin", S, do.dMdxu)
-		do.dSdu += np.transpose(do.dSdu, [1,0,2])
 		do.dSds  = np.einsum('ij,jkmn->ikmn',do.dMdx,I)
 		do.dSds += np.transpose(do.dSds, [1,0,3,2])
-		if self.num_param > 0:
-			do.dSdp  = np.einsum("kj,ijn->kin", S, do.dMdxp)
-			do.dSdp += np.transpose(do.dSdp, [1,0,2])
 
 		return dM, dS, do
 
 	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
 		if cross_cov:
 			raise NotImplementedError(
-			    'Cross covariance not implemented for continuous time models')
-		ode = lambda t, x: self._x_dist_ode(t,x,u,grad=grad)
-		X   = self._ode_vector_merge(xk, Sk, grad=grad)
+				'Cross covariance not implemented for continuous time models')
+		mean, var = self.get_input_mean_and_cov(xk, Sk, u, concatenate=True)
+		
+		ode = lambda t, x: self._x_dist_ode(t, x, grad=grad)
+		X   = self._ode_vector_merge(mean, var, grad=grad)
 		T   = self._get_time_steps()
 		T   = (T[0], T[-1])
 		X   = solve_ivp(ode, T, X)['y'][:,-1]
-
-		M, S, do = self._ode_vector_unmerge(X, grad=grad)
-		M, S, do = self.control_and_parameter_uncertainty(M, S, do, grad=grad)
-		return (M, S) if not grad else (M, S, do)
-
-	def control_and_parameter_uncertainty (self, M, S, do, grad=False):
-		S += np.matmul( do.dMdu, np.matmul(self.u_covar, do.dMdu.T) )
-		if self.num_param > 0:
-			S += np.matmul( do.dMdp, np.matmul(self.p_covar, do.dMdp.T) )
-
-		if grad:
-			# Matrix multiplication
-			def mul (s1, s2, i, j=None):
-				reverse = len(s2) > len(s1)
-				if reverse:
-					s1, s2 = s2, s1
-				a1 = getattr(do, s1)
-				a2 = getattr(do, s2)
-				S  = getattr(self, '%s_covar'%s2[-1])
-				o  = 'ab' if s1[-1] == s2[-1] else 'ba'
-				j  = i if j is None else j
-				if reverse:
-					return np.einsum('c,cb,%s->a'%o, a2[i], S, a1[j])
-				return np.einsum('%s,bc,c->a'%o, a1[i], S, a2[j])
-
-			def mul2 (s1, s2, i, j):
-				return mul(s1,s2,i,j) + mul(s2,s1,i,j)
-            
-			for i in range(self.num_states):
-				# Input uncertainty
-				do.dSdx[i,i] += 2*(mul('dMdxu','dMdu',i) + mul('dMdxp','dMdp',i))
-				do.dSdu[i,i] += 2*(mul('dMduu','dMdu',i) + mul('dMdup','dMdp',i))
-				do.dSdp[i,i] += 2*(mul('dMdup','dMdu',i) + mul('dMdpp','dMdp',i))
-				for j in range(i+1,self.num_states):
-					# Input uncertainty
-					do.dSdx[i,j] += mul2('dMdxu','dMdu',i,j)
-					do.dSdu[i,j] += mul2('dMduu','dMdu',i,j)
-					do.dSdp[i,j] += mul2('dMdup','dMdu',i,j)
-					# Parameter uncertainty
-					do.dSdx[i,j] += mul2('dMdxp','dMdp',i,j)
-					do.dSdu[i,j] += mul2('dMdup','dMdp',i,j)
-					do.dSdp[i,j] += mul2('dMdpp','dMdp',i,j)
-					# Symmetry
-					do.dSdx[j,i]  = do.dSdx[i,j]
-					do.dSdu[j,i]  = do.dSdu[i,j]
-					do.dSdp[j,i]  = do.dSdp[i,j]
-		return M, S, do
-
 		
-	def _x_dist_ode (self, t, X, U, grad=False):
-		x, S, do = self._ode_vector_unmerge(X, grad=grad)
+		M, S, do = self._ode_vector_unmerge(X, grad=grad)
+		M, S, do = self._ode_mean_var_unmerge(M, S, do, grad=grad)
+		return (M, S) if not grad else (M, S, do)
+		
+	def _x_dist_ode (self, t, X, grad=False):
+		mean, var, do = self._ode_vector_unmerge(X, grad=grad)
 
-		# Input
-		if not (isinstance(U, np.ndarray) or callable(U)):
-			raise ValueError('Control input not array or callable')
-		u = U if isinstance(U, np.ndarray) else U(t)
-
-		x, S, domm = self._ode_moment_match(x, S, u, grad=grad)
-
+		x, S, domm = self._ode_moment_match(mean, var, grad=grad)
+		
+		if not grad:
+			self._ode_vector_merge(x, S, do, grad=False)
+		
 		# Matrix multiplication
 		def mul (s1, s2):
 			a1, a2 = getattr(domm,s1), getattr(do,s2)
@@ -274,73 +236,17 @@ class ctModel (StateSpaceModel):
 			t2 = {'x':'i', 's':'ij'}[s1[3]]
 			t3 = {'x':'c', 'u':'c', 'p':'c'}.get(s2[3],'cd')
 			return np.einsum( '%s%s,%s%s->%s%s'%(t1,t2,t2,t3,t1,t3), a1, a2 )
-		
+	
 		dMdx = mul( 'dMdx', 'dMdx' ) + mul( 'dMds', 'dSdx' )
-		dMdu = domm.dMdu + mul( 'dMdx', 'dMdu' ) + mul('dMds','dSdu')
-		if self.num_param > 0:
-			dMdp = domm.dMdp + mul('dMdx','dMdp') + mul('dMds','dSdp')
+		dMds = mul( 'dMdx', 'dMds' ) + mul( 'dMds', 'dSds' )
+		dSdx = mul( 'dSdx', 'dMdx' ) + mul( 'dSds', 'dSdx' )
+		dSds = mul( 'dSdx', 'dMds' ) + mul( 'dSds', 'dSds' )
 		
-		if grad:
-			dMds = mul( 'dMdx', 'dMds' ) + mul( 'dMds', 'dSds' )
-			dSdx = mul( 'dSdx', 'dMdx' ) + mul( 'dSds', 'dSdx' )
-			dSds = mul( 'dSdx', 'dMds' ) + mul( 'dSds', 'dSds' )
-			dSdu = domm.dSdu + mul( 'dSdx', 'dMdu' ) + mul( 'dSds', 'dSdu' )
-			if self.num_param > 0:
-				dSdp = domm.dSdp + mul( 'dSdx', 'dMdp' ) + mul( 'dSds', 'dSdp' )
-
-			# Tensor multiplication
-			def tensmul (s1, s2):
-				a1, a2 = getattr(domm,s1), getattr(do,s2)
-				if a1.ndim == 3:
-					return np.einsum( 'aib,ic->abc', a1, a2 )
-				return np.einsum( 'ai,ibc->abc', a1, a2 )
-
-			# Tensor multiplication with three terms
-			def trimul (s1, s2, s3):
-				a1, a2 = getattr(do,s1), getattr(domm,s2)
-				a3     = np.eye(a2.shape[2]) if s3 == 'I' else getattr(do,s3)
-				return np.einsum( 'ib,aij,jc->abc', a1, a2, a3 )
-
-			# Compute Hessian update
-			def hess (a, b):
-				dMda, dMdb, dMdab = 'dMd'+a, 'dMd'+b, 'dMd'+a+b
-				ddM = trimul(dMda, 'dMdxx', dMdb) + tensmul('dMdx', dMdab)
-				if b != 'x':
-					ddM += trimul(dMda, 'dMdx'+b, 'I')
-					if a != 'x':
-						ddM += getattr(domm, dMdab) + tensmul('dMdx'+a, dMdb)
-				return ddM
-
-			dMdxx = hess('x','x')
-			dMdxu = hess('x','u')
-			dMduu = hess('u','u')
-			if self.num_param > 0:
-				dMdxp = hess('x','p')
-				dMdup = hess('u','p')
-				dMdpp = hess('p','p')
-
 		do.dMdx = dMdx
-		do.dMdu = dMdu
-		if self.num_param > 0:
-			do.dMdp = dMdp
-		if grad:
-			do.dMds = dMds
-			do.dSdx = dSdx
-			do.dSds = dSds
-			do.dSdu = dSdu
-			if self.num_param > 0:
-				do.dSdp = dSdp
-
-			do.dMdxx = dMdxx
-			do.dMdxu = dMdxu
-			do.dMduu = dMduu
-			if self.num_param > 0:
-				do.dMdxp = dMdxp
-				do.dMdup = dMdup
-				do.dMdpp = dMdpp
-		
-		# Total
-		return self._ode_vector_merge(x, S, do, grad=grad)
+		do.dMds = dMds
+		do.dSdx = dSdx
+		do.dSds = dSds
+		return self._ode_vector_merge(x, S, do, grad=True)
 	
 	def _get_time_steps (self, start=0., stop=None):
 		if stop is None:
