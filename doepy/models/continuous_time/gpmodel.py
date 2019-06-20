@@ -56,57 +56,56 @@ class ctGPModel (ctModel, GPModel):
 	"""
 	State prediction
 	"""
-	def _ode_moment_match (self, x, S, u, grad=False):
-		input_mean, _ = self.get_input_mean_and_cov(x, S, u, concatenate=True)
-
+	def _ode_moment_match (self, M, S, grad=False):
 		if self.transform:
 			assert_not_none(self.output_transform, 'output_transform')
 			assert_not_none(self.input_transform, 'input_transform')
-			input_mean = self.input_transform( input_mean )
-
-		E, D, P = self.num_states, self.num_inputs, self.num_param
-		dM, dS  = np.zeros( E ), np.zeros(( E, E ))
+			input_mean = self.input_transform( M )
+			
+		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
+		E = self.num_states + self.num_inputs + self.num_param
+		dm, ds  = np.zeros( Dx ), np.zeros(( Dx, Dx ))
 		for e, gp in enumerate(self.gps):
 			tmp     = gp.predict_noiseless(input_mean[None,:])
-			dM[e]   = tmp[0][0,0]
-			dS[e,e] = tmp[1][0,0]
-		    
-		do = Derivatives(E, num_states=E+D+P)
-
+			dm[e]   = tmp[0][0,0]
+			ds[e,e] = tmp[1][0,0]
+			
+		dMdx, dSdx = d_pred_d_x(self.gps, input_mean, diag=True)
 		if grad:
-			do.dMdx, do.dSdx = d_pred_d_x(self.gps, input_mean, diag=True)
-			do.dMdxx = d2_m_d_x2(self.gps, input_mean)
-		else:
-			do.dMdx  = d_pred_d_x(self.gps, input_mean, mean_only=True)
+			dMdxx = d2_m_d_x2(self.gps, input_mean)
 
 		# Transform back
 		if self.transform:
-			qt,qz    = self.input_transform.q, self.output_transform.q
-			dM       = self.output_transform(dM, back=True)
-			dS       = self.output_transform.cov(dS, back=True)
-			qtqt     = qt[:,None] * qt[None,:]
-			qzqz     = qz[:,None] * qz[None,:]
-			do.dMdx *= qz[:,None] / qt[None,:]
+			qt,qz = self.input_transform.q, self.output_transform.q
+			dm    = self.output_transform(dm, back=True)
+			ds    = self.output_transform.cov(ds, back=True)
+			qtqt  = qt[:,None] * qt[None,:]
+			qzqz  = qz[:,None] * qz[None,:]
+			dMdx *= qz[:,None] / qt[None,:]
 			if grad:
-				do.dSdx  *= qzqz[:,:,None] / qt[None,None,:]
-				do.dMdxx *= qz[:,None,None] / qtqt[None,:,:]
-
-		do = self.get_latent_state_derivatives(do, cross_cov=False, hessian=grad)
-
-		dS += self.x_covar + np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
+				dSdx  *= qzqz[:,:,None] / qt[None,None,:]
+				dMdxx *= qz[:,None,None] / qtqt[None,:,:]
+				
+		do = Derivatives(E, num_states=E)
+		do.dMdx = np.zeros((E, E))
+		do.dMdx[:Dx] = dMdx
+				
+		dM, dS  = np.zeros( E ), np.zeros(( E, E ))
+		dM[:Dx] = dm
+		dS[:Dx,:Dx] = ds + self.x_covar
+		dS += np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
 		if not grad:
 			return dM, dS, do
-
-		I = np.eye(self.num_states)[:,None,:,None] \
-		    * np.eye(self.num_states)[None,:,None,:]
+		
+		do.dSdx  = np.zeros((E, E, E))
+		do.dMdxx = np.zeros((E, E, E))
+		do.dSdx[:Dx,:Dx] = dSdx
+		do.dMdxx[:Dx] = dMdxx
+			
+		I = np.eye(E)[:,None,:,None] * np.eye(E)[None,:,None,:]
 		dSdx     = np.einsum("kj,ijn->kin", S, do.dMdxx)
 		do.dSdx += dSdx + np.transpose(dSdx, [1,0,2])
-		dSdu     = np.einsum("kj,ijn->kin", S, do.dMdxu)
-		do.dSdu += dSdu + np.transpose(dSdu, [1,0,2])
-		dSds     = np.einsum('ij,jkmn->ikmn', do.dMdx, I)
+		dSds     = np.einsum('ij,jkmn->ikmn',do.dMdx,I)
 		do.dSds += dSds + np.transpose(dSds, [1,0,3,2])
-		if self.num_param > 0:
-			dSdp     = np.einsum("kj,ijn->kin", S, do.dMdxp)
-			do.dSdp += dSdp + np.transpose(dSdp, [1,0,2])
 
 		return dM, dS, do
