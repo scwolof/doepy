@@ -190,10 +190,9 @@ class ctModel (StateSpaceModel):
 		dM = np.zeros(D)
 		dM[:self.num_states] = dx
 		
-		Sw = np.zeros((D,D))
-		Sw[:Dx, :Dx] = self.x_covar
-		
-		dS = np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T) + Sw
+		dS  = np.zeros((D,D))
+		dS[:Dx, :Dx] = self.x_covar
+		dS += np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
 		if not grad:
 			return dM, dS, do
 
@@ -204,22 +203,6 @@ class ctModel (StateSpaceModel):
 		do.dSds += np.transpose(do.dSds, [1,0,3,2])
 
 		return dM, dS, do
-
-	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
-		if cross_cov:
-			raise NotImplementedError(
-				'Cross covariance not implemented for continuous time models')
-		mean, var = self.get_input_mean_and_cov(xk, Sk, u, concatenate=True)
-		
-		ode = lambda t, x: self._x_dist_ode(t, x, grad=grad)
-		X   = self._ode_vector_merge(mean, var, grad=grad)
-		T   = self._get_time_steps()
-		T   = (T[0], T[-1])
-		X   = solve_ivp(ode, T, X)['y'][:,-1]
-		
-		M, S, do = self._ode_vector_unmerge(X, grad=grad)
-		M, S, do = self._ode_mean_var_unmerge(M, S, do, grad=grad)
-		return (M, S) if not grad else (M, S, do)
 		
 	def _x_dist_ode (self, t, X, grad=False):
 		mean, var, do = self._ode_vector_unmerge(X, grad=grad)
@@ -247,7 +230,23 @@ class ctModel (StateSpaceModel):
 		do.dSdx = dSdx
 		do.dSds = dSds
 		return self._ode_vector_merge(x, S, do, grad=True)
-	
+
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+		if cross_cov:
+			raise NotImplementedError(
+				'Cross covariance not implemented for continuous time models')
+		mean, var = self.get_input_mean_and_cov(xk, Sk, u, concatenate=True)
+
+		ode = lambda t, x: self._x_dist_ode(t, x, grad=grad)
+		X   = self._ode_vector_merge(mean, var, grad=grad)
+		T   = self._get_time_steps()
+		T   = (T[0], T[-1])
+		X   = solve_ivp(ode, T, X)['y'][:,-1]
+
+		M, S, do = self._ode_vector_unmerge(X, grad=grad)
+		M, S, do = self._ode_mean_var_unmerge(M, S, do, grad=grad)
+		return (M, S) if not grad else (M, S, do)
+
 	def _get_time_steps (self, start=0., stop=None):
 		if stop is None:
 			stop = start + self.step_length
