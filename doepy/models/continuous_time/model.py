@@ -210,7 +210,7 @@ class ctModel (StateSpaceModel):
 		x, S, domm = self._ode_moment_match(mean, var, grad=grad)
 		
 		if not grad:
-			self._ode_vector_merge(x, S, do, grad=False)
+			return self._ode_vector_merge(x, S, do, grad=False)
 		
 		# Matrix multiplication
 		def mul (s1, s2):
