@@ -148,7 +148,7 @@ class SingleChanceStateConstraint (StateConstraint):
         P( \mu_i(t) + alpha * S <= bounds[i,1] ) > conf
         P( \mu_i(t) - alpha * S >= bounds[i,1] ) > conf
     """   
-    def __init__ (self, bounds, conf=0.95):
+    def __init__ (self, bounds, conf=0.90):
         super().__init__ (bounds)
         assert self.bounds.ndim == 2
         self.conf  = conf
@@ -163,19 +163,19 @@ class SingleChanceStateConstraint (StateConstraint):
     
     def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
+        #print(grad)
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
             dCdS = np.zeros( C.shape + S.shape )
         
         for i in range(self.num_states):
             C[2*i]   = M[i] - self.r*np.sqrt(S[i,i]) - self.bounds[i,0];
-            C[2*i+1] = self.bounds[i,1]- self.r*np.sqrt(S[i,i]) - M[i];
-            
+            C[2*i+1] = self.bounds[i,1] - self.r*np.sqrt(S[i,i]) - M[i];
             if grad:
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
-                dCdS[2*i,  i, i] = -self.r/(2*np.sqrt(S[i,i]))
-                dCdS[2*i+1,i, i] = -self.r/(2*np.sqrt(S[i,i]))
+                dCdS[2*i,  i, i] = -(0.5)*self.r/(np.sqrt(S[i,i]))
+                dCdS[2*i+1,i, i] = -(0.5)*self.r/(np.sqrt(S[i,i]))
         return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS,dSdU))
     
 class PointwiseChanceStateConstraint (StateConstraint):
