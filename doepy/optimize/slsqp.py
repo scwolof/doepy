@@ -7,8 +7,8 @@ import numpy as np
 from scipy.optimize._slsqp import slsqp as scipy_slsqp
 from numpy import linalg
 
-def slsqp (problem_instance, u0, maxiter=10, ftol=1e-5,log_callback=None, 
-           maxmajiter=30, stepdesc=0.1,qptol=1e-6,debug=True):
+def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None, 
+           maxmajiter=50, stepdesc=0.9,qptol=1e-5,debug=True):
     """
     Wrapping function for scipy SLSQP function to solve control problems with
     inequality constraints.

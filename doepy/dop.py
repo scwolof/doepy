@@ -1,32 +1,10 @@
-"""
-MIT License
-
-Copyright (c) 2019 Simon Olofsson
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-"""
 
 import numpy as np
+from scipy.interpolate import interp1d
 
-class ProblemInstance:
+class dop:
     def __init__ (self, models, num_steps, div_criterion, u_bounds,
-                  u_constraints=[], z_constraints=[], t_const=[]):
+                  u_constraints=[], z_constraints=[], t_const=[], t0=0, tf=None):
         self.models      = models
         self.num_models  = len( models )
         self.num_meas    = models[0].num_meas
@@ -34,7 +12,30 @@ class ProblemInstance:
         self.divergence  = div_criterion
         self.u_bounds    = u_bounds.copy()
         self.num_control = u_bounds.shape[0]
-        self.t_const     = t_const
+        self.t0 = t0
+        self.t_inputs    = np.linspace(t0,tf,num_steps, False).transpose()
+        
+        # definition of final time
+        if tf is None:
+            self.tf = num_steps
+        else:
+            self.tf = tf
+        
+        # constraint points
+        if len(t_const) == 0:
+            self.t_const     = np.linspace(t0,tf,num_steps)
+        else:
+            self.t_const     = t_const
+        
+        # number of constraint points
+        self.n_tconst    = len(self.t_const)
+        
+        # integration points
+        self.t_all = np.unique(np.concatenate((self.t_const,self.t_inputs)))
+        self.t_all.sort()
+        
+        # total points
+        self.n_tall = len(self.t_all)
 
         # Control input bounds at every step
         self.bounds = np.array([ self.u_bounds ] * self.num_steps )
@@ -56,7 +57,7 @@ class ProblemInstance:
 
         for const in self.z_constraints:
             # Observed state constraints
-            self.num_constraints += const.sum_num_constraints(self.num_steps,self.num_models)
+            self.num_constraints += const.sum_num_constraints(self.n_tconst,self.num_models)
                                     
         for model in self.models:
             # Latent state constraints - for data-driven surrogate models
@@ -126,41 +127,58 @@ class ProblemInstance:
             return dMdU, dSdU
                    
         
+        # Controls at time ti
+        ui = interp1d(self.t_inputs, U, kind='previous', axis=0, fill_value='extrapolate')
+        # Constraint points count
+        n_ck = 0
+        nu = 0
+        u0 = U[0]
+        
         # Iterate over control sequence
-        for n, u in enumerate( U ):
+        for n, ti in enumerate( self.t_all ):
+            #print(ti)
             dZdU.fill(0.)
             dSdU.fill(0.)
+            u = ui(ti)
+            if u != u0:
+                u0 = u.copy()
+                nu += 1
             
+            if n == self.n_tall-1:
+                break
+            else:
+                Ti = (ti,self.t_all[n+1])
+                    
             # Predictive distributions at time n for model i
             for i, model in enumerate( self.models ):
-               if grad:
-                    x[i], s[i], dox = model.predict_x_dist(x[i], s[i], u, grad=True)
+                if grad:
+                    x[i], s[i], dox = model.predict_x_dist(x[i], s[i], u, grad=True, T=Ti)
                     Z[i], S[i], doy = model.predict_z_dist(x[i], s[i], grad=True)
-                    for j in range( n+1 ):
+                    for j in range( nu+1 ):
                         dxdU[i][j],dsdU[i][j] = gradchain(dox,dxdU,dsdU,i,j)
-                        if j == n:
+                        if j == nu:
                             dxdU[i][j] += dox.dMdu
                             dsdU[i][j] += dox.dSdu
                         dZdU[i,:,j],dSdU[i,:,:,j] = gradchain(doy,dxdU,dsdU,i,j)
-                    
-               else:
-                    x[i], s[i] = model.predict_x_dist(x[i], s[i], u)
+                else:
+                    x[i], s[i] = model.predict_x_dist(x[i], s[i], u, grad=False, T=Ti)
                     Z[i], S[i] = model.predict_z_dist(x[i], s[i])
 
                 # Update latent state constraints
-               model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
-                
+                model.update_x_constraints(x[i], s[i], dxdU[i], dsdU[i])
                 
                 # State constraint for model i at time n
-               for const in self.z_constraints:
-                    L = const.num_constraints()
-                    c = const(Z[i], S[i], dZdU[i], dSdU[i], step=n, grad=grad)
-                    if grad:
-                        c, dcdU    = c
-                        dCdU[ i_c: i_c+L ] = dcdU
+                if np.in1d(ti, self.t_const):
+                    for const in self.z_constraints:
+                        L = const.num_constraints()
+                        c = const(Z[i], S[i], dZdU[i], dSdU[i], step=n_ck, grad=grad)
+                        if grad:
+                            c, dcdU    = c
+                            dCdU[ i_c: i_c+L ] = dcdU
                         
-                    C[ i_c: i_c+L ]    = c
-                    i_c += L
+                        C[ i_c: i_c+L ]    = c
+                        i_c += L
+                    n_ck += 1
                     
                     
             # Divergence between predictive distributions at time n
@@ -169,12 +187,14 @@ class ProblemInstance:
                 S[i] += model.y_covar
                 
                 
-            ftmp = self.divergence(Z, S, grad=grad)
+            
             if grad:
                 ftmp, dDdY, dDdS = self.divergence(Z, S, grad=True)
-                for j in range( n+1 ):
+                for j in range( nu+1 ):
                     dfdU[j] = -np.einsum('ij,ijk->k', dDdY, dZdU[:,:,j] ) \
                              + np.einsum('ijk,ijkl->l', dDdS, dSdU[:,:,:,j])
+            else:
+                ftmp = self.divergence(Z, S, grad=grad)
             f = -ftmp   ## Minimisation -> negative maximisation
 
         # latent state constraints
@@ -193,3 +213,89 @@ class ProblemInstance:
         dfdU = dfdU.reshape(u_flat.shape)
         dCdU = dCdU.reshape((-1,) + u_flat.shape)
         return f, C, dfdU, dCdU
+    
+    def update_t(self, new_t):
+        
+        # constraint points
+        self.t_const     = new_t
+        
+        # number of constraint points
+        self.n_tconst    = len(self.t_const)
+        
+        # integration points
+        self.t_all = np.unique(np.concatenate((self.t_const,self.t_inputs)))
+        self.t_all.sort()
+        
+        # total points
+        self.n_tall = len(self.t_all)
+
+        # Compute the number of constraints
+        self.num_constraints = 0
+        for const in self.u_constraints:
+            # Control constraints
+            self.num_constraints += const.num_constraints( self.num_steps )
+
+        for const in self.z_constraints:
+            # Observed state constraints
+            self.num_constraints += const.sum_num_constraints(self.n_tconst,self.num_models)
+                                    
+        for model in self.models:
+            # Latent state constraints - for data-driven surrogate models
+            self.num_constraints += self.num_steps * model.num_x_constraints()
+
+    def update_z_bounds(self, e_g0):
+        for const in self.z_constraints:
+            #const.bounds[:,0] -= e_g0
+            const.bounds[:,1] -= e_g0
+            
+    def simulate(self, u_flat):
+        E = self.num_meas
+        N = self.num_steps
+        M = self.num_models
+        D = self.num_control
+        U = u_flat.reshape(( N, D ))
+        x, s = [], []
+        
+        for model in self.models:
+            x.append( model.x0 )
+            s.append( model.x0_covar )
+            
+        Z = np.zeros(( M, E ))
+        S = np.zeros(( M, E, E ))
+        
+        ui = interp1d(self.t_inputs, U, kind='previous', axis=0, fill_value='extrapolate')
+        # Constraint points count
+        nu = 0
+        u0 = U[0]
+        Z_hist = np.zeros((self.n_tall, M, E))
+        S_hist = np.zeros((self.n_tall, M, E, E))
+        for i, model in enumerate( self.models ):
+            Z_hist[0,i,:], S_hist[0,i,:,:] = model.predict_z_dist(x[i], s[i])
+            
+         # Iterate over control sequence
+        for n, ti in enumerate( self.t_all ):
+            #print(ti)
+            u = ui(ti)
+            if u != u0:
+                u0 = u.copy()
+                nu += 1
+            
+            if n == self.n_tall-1:
+                break
+            else:
+                Ti = (ti,self.t_all[n+1])
+                    
+            # Predictive distributions at time n for model i
+            for i, model in enumerate( self.models ):
+                    x[i], s[i] = model.predict_x_dist(x[i], s[i], u, grad=False, T=Ti)
+                    Z[i], S[i] = model.predict_z_dist(x[i], s[i])
+                    Z_hist[n+1,i,:] = Z[i]
+                    S_hist[n+1,i,:,:] = S[i]
+            # Divergence between predictive distributions at time n
+            for i, model in enumerate( self.models ):
+                # Add measurement noise covariance
+                S[i] += model.y_covar
+                S_hist[n+1,i] += model.y_covar
+
+        return Z_hist, S_hist
+            
