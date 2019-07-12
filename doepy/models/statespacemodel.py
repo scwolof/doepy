@@ -193,17 +193,17 @@ class StateSpaceModel (Model):
 
         n = len(U)
         X = np.zeros(( n+1, self.num_states ))
-        Y = np.zeros((   n, self.num_meas ))
+        Y = np.zeros(( n, self.num_meas ))
 
         X[0] = x0
         for k in range( n ):
-            X[k+1], Y[k] = self._predict(X[k], U[k], **kwargs)
+            X[k+1], Y[k] = self._predict(X[k], U[k],T, **kwargs)
         return X, Y
 
     def _predict (self, x0, u, **kwargs):
         raise NotImplementedError
 
-    def sample (self, x0, U, t_U, T, initial_uncertainty=False):
+    def sample (self, x0, U, t_U=None, T=None, initial_uncertainty=False):
         """
         Stochastic model simulation
             x_{k+1} = f( x_k, u_k ) + w_k
@@ -216,6 +216,12 @@ class StateSpaceModel (Model):
             x0 = self.x0
         x0 = x0 if not initial_uncertainty else mvn(x0, self.x0_covar)
 
+        if t_U is None:
+            num_time_steps = len(U)
+            T = np.arange(num_time_steps+1)
+            t_U = np.arange(num_time_steps)
+
+
         #if U.ndim == 1:
         #    return self._sample(x0, U)
 
@@ -226,12 +232,11 @@ class StateSpaceModel (Model):
         ui = interp1d(t_U, U, kind='previous', axis=0, fill_value='extrapolate')
 
         X[0] = x0
-        #Y[0] = x0
         for k, ti in enumerate(T):
             if k != n-1:
                 Ti = (T[k],T[k+1])
                 u = ui(ti)
-                X[k+1], Y[k] = self._sample(X[k], u,Ti)
+                X[k+1], Y[k] = self._sample(X[k], u, Ti)
         return X, Y
 
     def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False, T=(0,1)):

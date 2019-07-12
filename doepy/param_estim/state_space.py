@@ -43,9 +43,9 @@ class StateSpaceParamEstim:
 
 		assert len(self.X0) == len(self.U), 'X0 and U different lengths'
 
-	def __call__ (self, p):
+	def __call__ (self, p, T=None):
 		self.model.p_mean = p
-		Z = [ self.model.predict(x0,u)[1] for x0,u in zip(self.X0, self.U) ]
+		Z = [ self.model.predict(x0,u,T)[1] for x0,u in zip(self.X0, self.U) ]
 		return np.vstack( Z )
 
 
