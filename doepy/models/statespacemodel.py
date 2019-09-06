@@ -120,23 +120,28 @@ class StateSpaceModel (Model):
     """
     def get_input_mean_and_cov (self, x, S, u, concatenate=False):
         assert_is_shape(x, (self.num_states,))
-        assert_is_shape(S, (self.num_states,self.num_states))
+        if S is not None:
+            assert_is_shape(S, (self.num_states,self.num_states))
         assert_is_shape(u, (self.num_inputs,))
 
         mean = ( x, u )
-        covs = ( S, self.u_covar )
+        if S is not None:
+            covs = ( S, self.u_covar )
 
         if self.num_param > 0:
             assert_not_none(self.p_mean, '%s:p_mean'%self.name)
-            assert_not_none(self.p_covar, '%s:p_covar'%self.name)
             mean += ( self.p_mean, )
-            covs += ( self.p_covar, )
+            if S is not None:
+                assert_not_none(self.p_covar, '%s:p_covar'%self.name)
+                covs += ( self.p_covar, )
 
         if concatenate:
             mean = np.concatenate( mean )
-        cov = block_diag(*covs)
 
-        return mean, cov
+        if S is not None:
+            cov = block_diag(*covs)
+
+        return mean, cov if S is not None else mean
 
     """
     Retrieve latent state deriv object from approx. infererence deriv object
@@ -260,12 +265,12 @@ class StateSpaceModel (Model):
         S[0] = Sk
         if not grad:
             for k in range(n):
-                X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
+                X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k],T=T)
             return X, S
 
         do = LatentStateDerivatives(self, num_test_points=n)
         for k in range(n):
-            X[k], S[k], dok = self._predict_x_dist(X[k], S[k], U[k], grad=True)
+            X[k], S[k], dok = self._predict_x_dist(X[k], S[k], U[k], grad=True,T=T)
             do.insert(dok,k)
         return X, S, do
 

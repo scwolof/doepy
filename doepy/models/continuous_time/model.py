@@ -52,10 +52,10 @@ class ctModel (StateSpaceModel):
     def _predict (self, x, u, T):
         ps = mvn(self.p_mean,self.p_covar)
         args = (u,) if self.num_param < 1 else (u, ps)
-        ode  = lambda t, x: self.f(x,*args)
+        ode  = lambda t, x: self.f(t,x,*args)
         #T    = self._get_time_steps(start=start_time)
         #T    = (T[0], T[-1])
-        xk1  = solve_ivp(ode, T, x)['y'][:,-1]
+        xk1  = solve_ivp(ode, T, x,atol=1e-5)['y'][:,-1]
         yk   = np.matmul(self.H, x)
         return xk1, yk
 
@@ -68,178 +68,201 @@ class ctModel (StateSpaceModel):
         #return xy[0] + wk, xy[1] + vk
         return xy[0], xy[1] + vk
     
-    def _ode_vector_merge (self, x, S, do=None, grad=False):
+    def _ode_vector_merge (self, x, S=None, do=None, grad=False):
         assert_is_shape(x, (self.num_states,))
-        assert_is_shape(S, (self.num_states, self.num_states))
-        
-        # Mean, covariance and input-output covariance
-        xs = ( x[:,None], S )
-        
+        if S is not None:
+            assert_is_shape(S, (self.num_states, self.num_states))
+            # Mean, covariance and input-output covariance
+            xs = ( x[:,None], S )
+        else:
+            xs = ( x[:,None] )
+
+
         if do is None:
             do = LatentStateDerivatives(self)
             do.dMdx = np.eye(self.num_states)
             if grad:
-                do.dSds = np.eye(self.num_states)[:,None,:,None] \
-                          * np.eye(self.num_states)[None,:,None,:]
+                if  S is not None:
+                    do.dSds = np.eye(self.num_states)[:,None,:,None] \
+                              * np.eye(self.num_states)[None,:,None,:]
         
-        # dMdx, dMdu, dMdp
-        xs += ( do.dMdx, do.dMdu )
+        if S is not None:
+            xs += ( do.dMdx, do.dMdu )
+        else:
+            xs = (xs,do.dMdx, do.dMdu)
+
         if self.num_param > 0:
-            xs  += ( do.dMdp, )
+            if  S is not None:
+                xs  += ( do.dMdp, )
         if not grad:
             return np.concatenate(xs, axis=1).T.flatten()
         
-        # dMds, dSdx, dSdu, dSdp
-        xs += ( do.dMds.reshape(( self.num_states, -1 )),
-                do.dSdx.reshape(( self.num_states, -1 )),
-                do.dSdu.reshape(( self.num_states, -1 )) )
-        if self.num_param > 0:
-            xs  += ( do.dSdp.reshape(( self.num_states, -1 )), )
-        # dSds
-        xs += ( do.dSds.reshape(( self.num_states, -1 )), )
+        if  S is not None:
+            # dMds, dSdx, dSdu, dSdp
+            xs += ( do.dMds.reshape(( self.num_states, -1 )),
+                    do.dSdx.reshape(( self.num_states, -1 )),
+                    do.dSdu.reshape(( self.num_states, -1 )) )
+            if self.num_param > 0:
+                xs  += ( do.dSdp.reshape(( self.num_states, -1 )), )
+            # dSds
+            xs += ( do.dSds.reshape(( self.num_states, -1 )), )
 
-        # dMdxx
-        xs += ( do.dMdxx.reshape(( self.num_states, -1 )), )
-        # dMdxu
-        xs += ( do.dMdxu.reshape(( self.num_states, -1 )), )
-        # dMduu
-        xs += ( do.dMduu.reshape(( self.num_states, -1 )), )
-        if self.num_param > 0:
-            # dMdxp
-            xs += ( do.dMdxp.reshape(( self.num_states, -1 )), )
-            # dMdup
-            xs += ( do.dMdup.reshape(( self.num_states, -1 )), )
-            # dMdpp
-            xs += ( do.dMdpp.reshape(( self.num_states, -1 )), )
+            # dMdxx
+            xs += ( do.dMdxx.reshape(( self.num_states, -1 )), )
+            # dMdxu
+            xs += ( do.dMdxu.reshape(( self.num_states, -1 )), )
+            # dMduu
+            xs += ( do.dMduu.reshape(( self.num_states, -1 )), )
+            if self.num_param > 0:
+                # dMdxp
+                xs += ( do.dMdxp.reshape(( self.num_states, -1 )), )
+                # dMdup
+                xs += ( do.dMdup.reshape(( self.num_states, -1 )), )
+                # dMdpp
+                xs += ( do.dMdpp.reshape(( self.num_states, -1 )), )
         
         return np.concatenate(xs, axis=1).T.flatten()
     
-    def _ode_vector_unmerge (self, X, grad=False):
+    def _ode_vector_unmerge (self, X, grad=False, param_uncertainty=True):
         # Mean x
         d = [1]
-        # Covariance S
-        d += [ self.num_states ]
+
+        if param_uncertainty:
+            # Covariance S
+            d += [ self.num_states ]
         
         # dMdx, dMdu, dMdp
-        d += [self.num_states, self.num_inputs, self.num_param]
+        d += [self.num_states, self.num_inputs]
+        
+        if param_uncertainty:
+            d += [self.num_param]
 
         if grad:
-            # dMds
-            d += [ self.num_states*self.num_states ]
-            # dSdx, dSdu, dSdp
-            d += [ self.num_states*self.num_states ]
-            d += [ self.num_states*self.num_inputs ]
-            d += [ self.num_states*self.num_param ]
-            # dSds
-            d += [ self.num_states*self.num_states*self.num_states ]
-            # dMdxx, dMdxu, dMduu
-            d += [ self.num_states*self.num_states ]
-            d += [ self.num_states*self.num_inputs ]
-            d += [ self.num_inputs*self.num_inputs ]
-            if self.num_param > 0:
-                # dMdxp, dMdup, dMdpp
+            if param_uncertainty:
+                # dMds
+                d += [ self.num_states*self.num_states ]
+                # dSdx, dSdu, dSdp
+                d += [ self.num_states*self.num_states ]
+                d += [ self.num_states*self.num_inputs ]
                 d += [ self.num_states*self.num_param ]
-                d += [ self.num_inputs*self.num_param ]
-                d += [ self.num_param*self.num_param ]
+                # dSds
+                d += [ self.num_states*self.num_states*self.num_states ]
+                # dMdxx, dMdxu, dMduu
+                d += [ self.num_states*self.num_states ]
+                d += [ self.num_states*self.num_inputs ]
+                d += [ self.num_inputs*self.num_inputs ]
+                if self.num_param > 0:
+                    # dMdxp, dMdup, dMdpp
+                    d += [ self.num_states*self.num_param ]
+                    d += [ self.num_inputs*self.num_param ]
+                    d += [ self.num_param*self.num_param ]
             
         D = np.cumsum( d )
         X = X.reshape((D[-1], self.num_states)).T
         
         x = X[:,0];
         i = 0
-        S = X[:,D[i]:D[i+1]]; i+= 1
+        if param_uncertainty:
+            S = X[:,D[i]:D[i+1]]; i+= 1
         
         do = LatentStateDerivatives(self)
         Dx = (self.num_states,)
         Du = (self.num_inputs,)
-        Dp = (self.num_param,)
+        if param_uncertainty:
+            Dp = (self.num_param,)
         
         do.dMdx = X[:,D[i]:D[i+1]]; i+= 1
         do.dMdu = X[:,D[i]:D[i+1]]; i+= 1
         if self.num_param > 0:
-            do.dMdp = X[:,D[i]:D[i+1]]
+            if param_uncertainty:
+                do.dMdp = X[:,D[i]:D[i+1]]
         i+= 1
         if not grad:
-            return x, S, do
+            return (x, S, do) if param_uncertainty else (x, do)
 
-        do.dMds = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-        do.dSdx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-        do.dSdu = X[:,D[i]:D[i+1]].reshape(Dx*2+(self.num_inputs,)); i+= 1
-        if self.num_param > 0:
-            do.dSdp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp)
-        i+= 1
-        do.dSds = X[:,D[i]:D[i+1]].reshape(Dx*4); i+= 1
+        if param_uncertainty:
+            do.dMds = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
+            do.dSdx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
+            do.dSdu = X[:,D[i]:D[i+1]].reshape(Dx*2+(self.num_inputs,)); i+= 1
+            if self.num_param > 0:
+                do.dSdp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp)
+            i+= 1
+            do.dSds = X[:,D[i]:D[i+1]].reshape(Dx*4); i+= 1
 
-        do.dMdxx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
-        do.dMdxu = X[:,D[i]:D[i+1]].reshape(Dx*2+Du); i+= 1
-        do.dMduu = X[:,D[i]:D[i+1]].reshape(Dx+Du*2); i+= 1
-        if self.num_param > 0: 
-            do.dMdxp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp); i+= 1
-            do.dMdup = X[:,D[i]:D[i+1]].reshape(Dx+Du+Dp); i+= 1
-            do.dMdpp = X[:,D[i]:D[i+1]].reshape(Dx+Dp*2); i+= 1
+            do.dMdxx = X[:,D[i]:D[i+1]].reshape(Dx*3); i+= 1
+            do.dMdxu = X[:,D[i]:D[i+1]].reshape(Dx*2+Du); i+= 1
+            do.dMduu = X[:,D[i]:D[i+1]].reshape(Dx+Du*2); i+= 1
+            if self.num_param > 0: 
+                do.dMdxp = X[:,D[i]:D[i+1]].reshape(Dx*2+Dp); i+= 1
+                do.dMdup = X[:,D[i]:D[i+1]].reshape(Dx+Du+Dp); i+= 1
+                do.dMdpp = X[:,D[i]:D[i+1]].reshape(Dx+Dp*2); i+= 1
         
-        return x, S, do
+        return (x, S, do) if param_uncertainty else (x, do)
 
-    def _ode_moment_match (self, x, S, u, grad=False):
-        input_mean, _ = self.get_input_mean_and_cov(x, S, u)
+    def _ode_moment_match (self, t, x, S, u, grad=False):
 
-        dM, do = self.f( *input_mean, grad=True )
-        dS     = self.x_covar + np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
+        if S is None:
+            input_mean, _ = self.get_input_mean_and_cov(x, S, u)
+            dM, do = self.f( t, *input_mean, grad=True, param_uncertainty=False)
+        else:
+            input_mean, _ = self.get_input_mean_and_cov(x, S, u)
+            dM, do = self.f( t, *input_mean, grad=True )
+            dS     = self.x_covar + np.matmul(do.dMdx, S) + np.matmul(S, do.dMdx.T)
+    
+        
         if not grad:
-            return dM, dS, do
+            return (dM, dS, do) if S is not None else  (dM, do) 
 
-        I = np.eye(self.num_states)[:,None,:,None] \
+        
+        if S is not None:
+            I = np.eye(self.num_states)[:,None,:,None] \
             * np.eye(self.num_states)[None,:,None,:]
-        do.dSdx  = np.einsum("kj,ijn->kin", S, do.dMdxx)
-        do.dSdx += np.transpose(do.dSdx, [1,0,2])
-        do.dSdu  = np.einsum("kj,ijn->kin", S, do.dMdxu)
-        do.dSdu += np.transpose(do.dSdu, [1,0,2])
-        do.dSds  = np.einsum('ij,jkmn->ikmn',do.dMdx,I)
-        do.dSds += np.transpose(do.dSds, [1,0,3,2])
-        if self.num_param > 0:
-            do.dSdp  = np.einsum("kj,ijn->kin", S, do.dMdxp)
-            do.dSdp += np.transpose(do.dSdp, [1,0,2])
 
-        return dM, dS, do
+            do.dSdx  = np.einsum("kj,ijn->kin", S, do.dMdxx)
+            do.dSdx += np.transpose(do.dSdx, [1,0,2])
+            do.dSdu  = np.einsum("kj,ijn->kin", S, do.dMdxu)
+            do.dSdu += np.transpose(do.dSdu, [1,0,2])
+            do.dSds  = np.einsum('ij,jkmn->ikmn',do.dMdx,I)
+            do.dSds += np.transpose(do.dSds, [1,0,3,2])
+            if self.num_param > 0:
+                do.dSdp  = np.einsum("kj,ijn->kin", S, do.dMdxp)
+                do.dSdp += np.transpose(do.dSdp, [1,0,2])
+
+        return (dM, dS, do) if S is not None else  (dM, do)
 
     def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False, T=(0,1)):
         if cross_cov:
             raise NotImplementedError(
                 'Cross covariance not implemented for continuous time models')
-        ode = lambda t, x: self._x_dist_ode(t,x,u,grad=grad)
-        X   = self._ode_vector_merge(xk, Sk, grad=grad)
-        #T   = self._get_time_steps()
-        #t_p = np.array(T)
-        #n_tp = len(t_p)-1
-        #print(T)
-        #T   = (T[0], T[-1])
-        #print(T)
-        X   = solve_ivp(ode, T, X)
-        #print(X)
-        X = X['y'][:,-1]
-        #print(X)
-        M, S, do = self._ode_vector_unmerge(X, grad=grad)
-        M, S, do = self.control_and_parameter_uncertainty(M, S, do, grad=grad, T=T)
+
+        if Sk is None:
+            param_uncertainty=False
+        else:
+            param_uncertainty=True
+
+        ode = lambda t, x: self._x_dist_ode(t,x,u,grad=grad, param_uncertainty=param_uncertainty)
+        X   = self._ode_vector_merge(xk, Sk, grad=grad) 
         
-        #M = np.zeros((len(t_p)-1,) + xk.shape)
-        #S = np.zeros((len(t_p)-1,) + Sk.shape)
-        #if grad:
-        #    do = LatentStateDerivatives(self, num_test_points=n_tp)
-        #for i in range(n_tp):
-        #    M[i,:], S[i,:,:], dok = self._ode_vector_unmerge(X[:,i+1], grad=grad)
-        #    M[i,:], S[i,:,:], dok = self.control_and_parameter_uncertainty(M[i], S[i], dok, grad=grad)
-        #    if grad:
-        #        do.insert(dok,i)
-        return (M, S) if not grad else (M, S, do)
+
+        #X   = solve_ivp(ode, T, X, method='LSODA', atol=1e-3)
+        #X   = solve_ivp(ode, T, X, atol=1e-3,method='Radau')
+        X   = solve_ivp(ode, T, X,atol=1e-5)
+        X = X['y'][:,-1]
+
+        if param_uncertainty:
+            M, S, do = self._ode_vector_unmerge(X, grad=grad)
+            M, S, do = self.control_and_parameter_uncertainty(M, S, do, grad=grad, T=T)
+            return (M, S) if not grad else (M, S, do)
+        else:
+            M, do = self._ode_vector_unmerge(X, grad=grad, param_uncertainty=param_uncertainty)
+            return (M,None) if not grad else (M,None, do)
+        
+        
 
     def control_and_parameter_uncertainty (self, M, S, do, grad=False, T=(0,1)):
-        #print(T)
-        #print(T[1]-T[0])
-        #print(S[1,1])
         S += np.matmul( do.dMdu, np.matmul(self.u_covar, do.dMdu.T) )/(T[1]-T[0])
         if self.num_param > 0:
             S += np.matmul( do.dMdp, np.matmul(self.p_covar, do.dMdp.T) )/(T[1]-T[0])
-        #print(S[1,1])
         
         if grad:
             # Matrix multiplication
@@ -280,15 +303,23 @@ class ctModel (StateSpaceModel):
         return M, S, do
 
         
-    def _x_dist_ode (self, t, X, U, grad=False):
-        x, S, do = self._ode_vector_unmerge(X, grad=grad)
+    def _x_dist_ode (self, t, X, U, grad=False, param_uncertainty=True):
+        
+        if param_uncertainty:
+            x, S, do = self._ode_vector_unmerge(X, grad=grad, param_uncertainty=True)
+        else:
+            x, do = self._ode_vector_unmerge(X, grad=grad,param_uncertainty=False)
+            S = None
 
         # Input
         if not (isinstance(U, np.ndarray) or callable(U)):
             raise ValueError('Control input not array or callable')
         u = U if isinstance(U, np.ndarray) else U(t)
 
-        x, S, domm = self._ode_moment_match(x, S, u, grad=grad)
+        if param_uncertainty:
+            x, S, domm = self._ode_moment_match(t, x, S, u, grad=grad)
+        else:
+            x, domm = self._ode_moment_match(t, x, None, u, grad=grad)
 
         # Matrix multiplication
         def mul (s1, s2):
@@ -298,18 +329,27 @@ class ctModel (StateSpaceModel):
             t3 = {'x':'c', 'u':'c', 'p':'c'}.get(s2[3],'cd')
             return np.einsum( '%s%s,%s%s->%s%s'%(t1,t2,t2,t3,t1,t3), a1, a2 )
         
-        dMdx = mul( 'dMdx', 'dMdx' ) + mul( 'dMds', 'dSdx' )
-        dMdu = domm.dMdu + mul( 'dMdx', 'dMdu' ) + mul('dMds','dSdu')
+        if param_uncertainty:
+            dMdx = mul( 'dMdx', 'dMdx' ) + mul( 'dMds', 'dSdx' )
+            dMdu = domm.dMdu + mul( 'dMdx', 'dMdu' ) + mul('dMds','dSdu')
+        else:
+            dMdx = mul( 'dMdx', 'dMdx' ) 
+            dMdu = domm.dMdu + mul( 'dMdx', 'dMdu' ) 
+
         if self.num_param > 0:
-            dMdp = domm.dMdp + mul('dMdx','dMdp') + mul('dMds','dSdp')
+            if param_uncertainty:
+                dMdp = domm.dMdp + mul('dMdx','dMdp') + mul('dMds','dSdp')
+            else:
+                dMdp = domm.dMdp + mul('dMdx','dMdp') 
         
         if grad:
-            dMds = mul( 'dMdx', 'dMds' ) + mul( 'dMds', 'dSds' )
-            dSdx = mul( 'dSdx', 'dMdx' ) + mul( 'dSds', 'dSdx' )
-            dSds = mul( 'dSdx', 'dMds' ) + mul( 'dSds', 'dSds' )
-            dSdu = domm.dSdu + mul( 'dSdx', 'dMdu' ) + mul( 'dSds', 'dSdu' )
-            if self.num_param > 0:
-                dSdp = domm.dSdp + mul( 'dSdx', 'dMdp' ) + mul( 'dSds', 'dSdp' )
+            if param_uncertainty:
+                dMds = mul( 'dMdx', 'dMds' ) + mul( 'dMds', 'dSds' )
+                dSdx = mul( 'dSdx', 'dMdx' ) + mul( 'dSds', 'dSdx' )
+                dSds = mul( 'dSdx', 'dMds' ) + mul( 'dSds', 'dSds' )
+                dSdu = domm.dSdu + mul( 'dSdx', 'dMdu' ) + mul( 'dSds', 'dSdu' )
+                if self.num_param > 0:
+                    dSdp = domm.dSdp + mul( 'dSdx', 'dMdp' ) + mul( 'dSds', 'dSdp' )
 
             # Tensor multiplication
             def tensmul (s1, s2):
@@ -347,12 +387,13 @@ class ctModel (StateSpaceModel):
         if self.num_param > 0:
             do.dMdp = dMdp
         if grad:
-            do.dMds = dMds
-            do.dSdx = dSdx
-            do.dSds = dSds
-            do.dSdu = dSdu
-            if self.num_param > 0:
-                do.dSdp = dSdp
+            if param_uncertainty:
+                do.dMds = dMds
+                do.dSdx = dSdx
+                do.dSds = dSds
+                do.dSdu = dSdu
+                if self.num_param > 0:
+                    do.dSdp = dSdp
 
             do.dMdxx = dMdxx
             do.dMdxu = dMdxu
@@ -363,7 +404,7 @@ class ctModel (StateSpaceModel):
                 do.dMdpp = dMdpp
         
         # Total
-        return self._ode_vector_merge(x, S, do, grad=grad)
+        return (self._ode_vector_merge(x, S, do, grad=grad)) if param_uncertainty else (self._ode_vector_merge(x, None, do, grad=grad))
     
     def _get_time_steps (self, start=0., stop=None):
         if stop is None:

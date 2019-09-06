@@ -28,6 +28,8 @@ from scipy.special import erf, erfinv
 class StateConstraint:
     def __init__ (self, bounds, **kwargs):
         self.bounds = np.asarray( bounds )
+        self.ub_vars = []
+        self.lb_vars = []
 
         if self.bounds.ndim == 2:
             # Constant bounds
@@ -54,10 +56,23 @@ class StateConstraint:
     def num_constraints (self):
         # Number of individual constraints constructed by class
         raise NotImplementedError 
+
+    def const_index(self, bounds):
+        # Identify the constraints that have to be considered
+        if self.bounds.ndim == 2:
+            for n, bi in enumerate(bounds):
+                if bi[0] is not None:
+                    self.lb_vars.append(n)
+                if bi[1] is not None:
+                    self.ub_vars.append(n)
+
         
     def calc_dCdU(self,dcdZ,dZdU,dcdS,dSdU):
         # Calculate the gradient of the constraint related to U
-        return (np.einsum('ij,jnk->ink',dcdZ,dZdU) + np.einsum('ijk,jknd->ind',dcdS,dSdU))
+        if dcdS is not None:
+            return (np.einsum('ij,jnk->ink',dcdZ,dZdU) + np.einsum('ijk,jknd->ind',dcdS,dSdU))
+        else:
+            return np.einsum('ij,jnk->ink',dcdZ,dZdU)
         
     def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
         """
@@ -81,31 +96,38 @@ class ConstantMeanStateConstraint (StateConstraint):
     """
     def __init__ (self, bounds):
         super().__init__ (bounds)
+        self.const_index(bounds)
         assert self.bounds.ndim == 2
 
-    def sum_num_constraints (self, num_steps, num_models):
-        return 2 * self.num_states * num_steps * num_models
-    
     def num_constraints (self):
-        return 2 * self.num_states
+        return (len(self.lb_vars)+len(self.ub_vars))
+
+    def sum_num_constraints (self, num_steps, num_models):
+        return self.num_constraints() * num_steps * num_models
         
-    def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
-        C = np.zeros( 2 * self.num_states )
-        #print( 'mean' )
+        
+    def __call__ (self, M, S=None, dZdU=None, dSdU=None, step=None, grad=False):
+        C = np.zeros( self.num_constraints() )
+
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
-            dCdS = np.zeros( C.shape + S.shape )
-        
-        for i in range(self.num_states):
-            C[2*i]   = M[i] - self.bounds[i,0]
-            #print('lower: %d'%i)
-            #print(self.bounds[i,0])
-            C[2*i+1] = self.bounds[i,1] - M[i]
-            #print('upper: %d'%i)
-            #print(self.bounds[i,1])
+            if S is not None:
+                dCdS = np.zeros( C.shape + S.shape )
+            else:
+                dCdS = None
+        lk=0
+        for i in self.lb_vars:
+            C[lk]   = M[i] - self.bounds[i,0]
             if grad:
-                dCdM[2*i,  i] = 1.
-                dCdM[2*i+1,i] = -1.
+                dCdM[lk,  i] = 1.
+            lk += 1
+
+        for i in self.ub_vars:
+            C[lk]   = self.bounds[i,1] - M[i] 
+            if grad:
+                dCdM[lk,  i] = -1.
+            lk += 1
+
         return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS,dSdU))
         
 
@@ -124,12 +146,13 @@ class MovingMeanStateConstraint (StateConstraint):
     def num_constraints (self):
         return 2 * self.num_states
         
-    def __call__ (self, M, S, dZdU, dSdU, step, grad=False):
+    def __call__ (self, M, S=None, dZdU=None, dSdU=None, step=None, grad=False):
         step = np.min(( self.num_steps-1, step ))
         C    = np.zeros( 2 * self.num_states )
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
-            dCdS = np.zeros( C.shape + S.shape )
+            if S is not None:
+                dCdS = np.zeros( C.shape + S.shape )
         
         for i in range(self.num_states):
             C[2*i]   = M[i] - self.bounds[step,i,0]
@@ -137,7 +160,7 @@ class MovingMeanStateConstraint (StateConstraint):
             if grad:
                 dCdM[2*i,  i] = 1.
                 dCdM[2*i+1,i] = -1.
-        return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS,dSdU))
+        return C if not grad else (C, self.calc_dCdU(dCdM,dZdU,dCdS=None,dSdU=None))
     
 
 class SingleChanceStateConstraint (StateConstraint):
@@ -163,7 +186,6 @@ class SingleChanceStateConstraint (StateConstraint):
     
     def __call__ (self, M, S, dZdU, dSdU, step=None, grad=False):
         C = np.zeros( 2 * self.num_states )
-        #print(grad)
         if grad:
             dCdM = np.zeros( C.shape + M.shape )
             dCdS = np.zeros( C.shape + S.shape )
@@ -215,7 +237,6 @@ class PointwiseChanceStateConstraint (StateConstraint):
             Pi2 = 0.5*(1+ erf(x2))
             
             Pi = Pi2 - Pi1
-            #print(Pi)
             
             if grad:
                 dP1dM = (-1)*np.exp((-1)*(x1**2))/(np.sqrt(S[i,i])*np.sqrt(2)*np.sqrt(np.pi))
@@ -283,7 +304,6 @@ class JointChanceStateConstraint (StateConstraint):
             Pi2 = 0.5*(1+ erf(x2))
             
             Pi = Pi2 - Pi1
-            #print(Pi)
             
             if grad:
                 dP1dM = (-1)*np.exp((-1)*(x1**2))/(np.sqrt(S[i,i])*np.sqrt(2)*np.sqrt(np.pi))

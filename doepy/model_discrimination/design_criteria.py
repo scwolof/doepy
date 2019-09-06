@@ -55,7 +55,7 @@ class MaxEndPoint (DesignCriterion):
     """
     Constant zero objective function
     """
-    def _criterion (self, M, S, grad=False):
+    def _criterion (self, M, S=None, grad=False):
         c = M[-1,2]
         if not grad:
             return c

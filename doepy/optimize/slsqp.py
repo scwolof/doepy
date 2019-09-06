@@ -7,8 +7,8 @@ import numpy as np
 from scipy.optimize._slsqp import slsqp as scipy_slsqp
 from numpy import linalg
 
-def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None, 
-           maxmajiter=50, stepdesc=0.9,qptol=1e-5,debug=True):
+def slsqp (problem_instance, u0, maxiter=5, ftol=1e-8,log_callback=None, 
+           maxmajiter=50, stepdesc=0.000001,qptol=1e-3,debug=True):
     """
     Wrapping function for scipy SLSQP function to solve control problems with
     inequality constraints.
@@ -28,7 +28,9 @@ def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None,
         assert callable(log_callback), 'log_callback must be callable function'
 
     # m = The total number of constraints
-    m = int(problem_instance.num_constraints)
+    m  = int(problem_instance.num_constraints)
+    meq = 2*(problem_instance.num_steps-1)
+    m += meq
     # la = The number of constraints, or 1 if there are no constraints
     la = max([1, m])
     # n = The number of independent variables
@@ -36,10 +38,10 @@ def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None,
 
     # Define the workspaces for SLSQP
     n1     = n + 1
-    mineq  = m + n1 + n1
+    mineq  = m -meq  + n1 + n1
     len_jw = mineq
-    len_w  = (3*n1+m)*(n1+1)+(n1+1)*(mineq+2) + 2*mineq+(n1+mineq)*n1 \
-              + n1 + ((n+1)*n)//2 + 2*m + 3*n + 3*n1 + 1
+    len_w  = (3*n1+m)*(n1+1)+(n1-meq+1)*(mineq+2) + 2*mineq+(n1+mineq)*(n1-meq) \
+              + n1 + ((n+1)*n)//2 + 2*m + 3*n + 3*n1 + 1 + 2*meq
     w  = np.zeros(len_w)
     jw = np.zeros(len_jw)
 
@@ -70,7 +72,8 @@ def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None,
 
     # Initialize the iteration counter and the mode value
     mode    = np.array(0, int)
-    acc     = np.array(ftol, float)
+    #acc     = np.array(ftol, float)
+    acc     = np.array(stepdesc, float)
     majiter = np.array(maxiter, int)
 
     # Initialize internal SLSQP state variables
@@ -85,7 +88,7 @@ def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None,
     rescale_factor = None
     if debug:
         print("%5s %16s %16s %16s %16s" % ("NIT", "OBJFUN", "FNORM", "CMIN", "CNORM"))
-
+    u_hist = None
     while 1:
         if mode == 0 or mode == 1: 
             """
@@ -93,11 +96,16 @@ def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None,
             corresponding gradients. (It is assumed that gradients are 
             computed as part of objective and constraint evaluation.)
             """
-            f, c, df, dc = problem_instance(u)
+            f, eq, ci, df, deq, dci = problem_instance(u)
+            c = np.concatenate((eq,ci),axis=0)
+            dc = np.concatenate((deq,dci),axis=0)
+            
+
 
             # Initial rescaling factor
             if rescale_factor is None:
                 fact = np.abs(f)
+                
                 if fact > 5:
                     rescale_factor = 2. / fact
                 else:
@@ -117,22 +125,32 @@ def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None,
 
             f  = float(np.asarray(f)) * rescale_factor
             df = np.append(df, 0.0) * rescale_factor
-            dc = np.c_[ dc, np.zeros( la ) ]
+            #df = np.append(df, 0.0) 
+            dc = np.c_[ dc, np.zeros( la ) ]  * rescale_factor
+            #dc = np.c_[ dc, np.zeros( la ) ]  
 
             if np.any([np.any(np.isnan(mat)) for mat in [u, f, c, df, dc]]):
                 mode = 10
                 break
         itermx = np.array(maxmajiter)   
         alpha = np.array(stepdesc)
+        iexact = 0
         tol = qptol
+        
+        acc  = np.array(stepdesc, float)
         # Call SLSQP
-        scipy_slsqp(m, 0, u, ul, uu, f, c, df, dc, acc, majiter, mode, w, jw,
+        scipy_slsqp(m, meq, u, ul, uu, f, c, df, dc, acc, majiter, mode, w, jw,
                     alpha, f0, gs, h1, h2, h3, h4, t, t0, tol,
                     iexact, incons, ireset, itermx, line, n1, n2, n3)
-        
+        #print(majiter)
+        #print(itermx)
+
+        if np.abs(np.min(c.flatten())) <= ftol:
+            u_hist = u
+
         if debug:
             if mode == 1:
-                print("%5i % 16.6E % 16.6E % 16.6E % 16.6E % 16.6E " % (majiter, f, linalg.norm(df), np.min(c),linalg.norm(dc),f+0.01*np.sum(df)))
+                print("%5i % 16.6E % 16.6E % 16.6E % 16.6E % 16.6E " % (majiter, f/rescale_factor, linalg.norm(df), np.min(c.flatten()),linalg.norm(dc),f+0.01*np.sum(df)))
         
 
         # If exit mode is not -1 or 1, slsqp has typically completed
@@ -143,10 +161,12 @@ def slsqp (problem_instance, u0, maxiter=15, ftol=1e-5,log_callback=None,
             else:
                 break
 
+    if u_hist is not None:
+        u = u_hist
     u   = u.reshape( u0.shape )
     f   = f / rescale_factor
     df  = df[:-1] / rescale_factor
-    dc  = dc[:,:-1]
+    dc  = dc[:,:-1] / rescale_factor
     res = {'u':u, 'f':f, 'c':c, 'df':df, 'dc':dc}
 
     status  = int(mode)
