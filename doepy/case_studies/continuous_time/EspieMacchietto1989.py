@@ -49,18 +49,19 @@ class Model:
 		self.num_inputs   = 2
 		self.num_measured = 2
 
-		self.H = np.eye(2)           # Observation matrix
-		self.Q = np.zeros((2,2))     # Process noise covariance
-		self.R = 0.2**2 * np.eye(2)  # Measurement noise covariance
+		self.T  = 72.0
+		self.dt = 1.5
+		self.num_steps = 49
+
+		self.H = np.eye(2)              # Observation matrix
+		self.Q = np.zeros((2,2))        # Process noise covariance
+		#self.R = 0.2**2 * np.eye(2)     # Measurement noise covariance
+		self.R = np.array([[0.06, -0.01],[-0.01, 0.04]]) # Measurement noise covariance
 
 		self.S_u  = np.diag([1e-6, 1e-3])
 		self.x0   = np.array([ 1.0, 0.01 ])
 		self.S_x0 = np.diag([1e-3, 1e-6])
 		self.x0_bounds = np.array([[1, 10], [0.01, 0.01]])
-
-		self.T  = 72.0
-		self.dt = 1.5
-		self.num_steps = 49
 
 		self.u_bounds = np.array([[0.05, 0.2], [5., 35.]])
 		self.x_bounds = np.array([[0., 20.], [0., 30.]])
@@ -73,7 +74,7 @@ class Model:
 		        'x_covar': self.Q,
 		        'u_covar': self.S_u,
 		        'y_covar': self.R,
-		        'hessian': False,
+		        'hessian': True,
 		        'x0_covar':  self.S_x0,
 		        'x_bounds':  self.x_bounds,
 		        'u_bounds':  self.u_bounds,
@@ -88,7 +89,8 @@ class Model:
 
 	@property
 	def p0_covar (self):
-		return 1e-4 * np.eye( self.num_param )
+		#return 1e-4 * np.eye( self.num_param )
+		return 0.05 * np.eye( self.num_param )
 
 	@property
 	def p_bounds (self):
@@ -101,7 +103,8 @@ class M1 (Model):
     """
     def __init__ (self):
         super().__init__('M1')
-        self.p0 = np.array([ 0.3, 0.25, 0.56, 0.02 ])
+        #self.p0 = np.array([ 0.3, 0.25, 0.56, 0.02 ])
+        self.p0 = np.array([ 0.5, 0.5, 0.5, 0.5 ])
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
@@ -118,7 +121,8 @@ class M1 (Model):
         do = LatentStateDerivatives(self)
         
         # Gradients
-        drdx = np.array([ 0., 1]) * r * (1/x2 - 1./(p2 + x2))
+        #drdx = np.array([ 0., 1]) * r * (1/x2 - 1./(p2 + x2))
+        drdx = np.array([ 0., 1]) * (p1 / ( p2 + x2 ) - p1*x2 / ( p2 + x2 )**2)
         drdp = np.array([ r/p1, -r/(p2 + x2), 0., 0. ])
 
         d1dx = np.array([r-p4-u1, 0]) + x1*drdx 
@@ -140,11 +144,13 @@ class M1 (Model):
         drdpp[1,1] = -2 * drdp[1] / (p2 + x2)
         
         drdxx = np.zeros(( self.num_states, self.num_states ))
-        drdxx[1,1] = drdpp[1,1] + 2*drdp[1]/x2
+        #drdxx[1,1] = drdpp[1,1] + 2*drdp[1]/x2
+        drdxx[1,1] = drdpp[1,1] - 2 * p1 / ( p2 + x2 )**2
         
         drdxp = np.zeros(( self.num_states, self.num_param ))
         drdxp[1,0] = drdx[1]/p1
-        drdxp[1,1] = drdpp[1,1] + drdp[1]/x2
+        #drdxp[1,1] = drdpp[1,1] + drdp[1]/x2
+        drdxp[1,1] = drdpp[1,1] - p1 / ( p2 + x2 )**2
 
         dx1dxx = np.array([[0., drdx[1]], [drdx[1], x1*drdxx[1,1]]])
         dx2dxx = -dx1dxx/p3
@@ -181,15 +187,18 @@ class M2 (Model):
     """
     def __init__ (self):
         super().__init__('M2')
-        self.p0 = np.array([ 0.3, 0.03, 0.55, 0.03 ])
+        #self.p0 = np.array([ 0.3, 0.03, 0.55, 0.03 ])
+        self.p0 = np.array([ 0.5, 0.5, 0.5, 0.5 ])
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
         u1, u2 = u
         p1, p2, p3, p4 = p 
 
-        r   = p1*x2 / ( p2*x1 + x2 )
-        rd  = r / ( p2*x1 + x2 )
+        #r   = p1*x2 / ( p2*x1 + x2 )
+        r   = 0. if np.all(x==0) else p1*x2 / ( p2*x1 + x2 )
+        #rd  = r / ( p2*x1 + x2 )
+        rd  = 0. if r == 0 else r / ( p2*x1 + x2 )
         dx1 = (r - p4 - u1) * x1
         dx2 = -r*x1/p3 + u1*(u2 - x2)
         dM  = np.array([dx1, dx2])
@@ -199,7 +208,8 @@ class M2 (Model):
         do = LatentStateDerivatives(self)
         
         # Gradients
-        drdx = r * np.array([ -p2/(p2*x1+x2), 1./x2 - 1./(p2*x1+x2) ])
+        #drdx = r * np.array([ -p2/(p2*x1+x2), 1./x2 - 1./(p2*x1+x2) ])
+        drdx = np.array([ -r*p2/(p2*x1+x2), p1/( p2*x1 + x2 ) - r/(p2*x1+x2) ])
         drdp = np.array([ r/p1, -rd*x1, 0., 0. ])
 
         d1dx = np.array([r-p4-u1, 0]) + x1*drdx
@@ -222,13 +232,16 @@ class M2 (Model):
         
         drdxx = np.zeros(( self.num_states, self.num_states ))
         drdxx[0,0] = -2*p2*drdx[0]/(p2*x1+x2)
-        drdxx[0,1] = drdxx[1,0] = -drdx[0]*(2/(p2*x1+x2)-1./x2)
+        #drdxx[0,1] = drdxx[1,0] = -drdx[0]*(2/(p2*x1+x2)-1./x2)
+        drdxx[1,0] = -p1*p2 / (p2*x1+x2)**2 - 2*drdx[0]/(p2*x1+x2)
+        drdxx[0,1] = drdxx[1,0]
         drdxx[1,1] = -2*drdx[1]/(p2*x1+x2)
         
         drdxp = np.zeros(( self.num_states, self.num_param ))
         drdxp[:,0] = drdx/p1
         drdxp[0,1] = -(rd*x2 + p2*drdp[1])/(p2*x1+x2)
-        drdxp[1,1] = drdp[1]*(1./x2-1./(p2*x1+x2)) + r*x1/(p2*x1+x2)**2
+        #drdxp[1,1] = drdp[1]*(1./x2-1./(p2*x1+x2)) + r*x1/(p2*x1+x2)**2
+        drdxp[1,1] = (r-p1)*x1/(p2*x1+x2)**2 - drdp[1]/(p2*x1+x2)
 
         dx1dxx = np.array([[2*drdx[0], drdx[1]],[drdx[1], 0.]]) + x1*drdxx
         dx2dxx = -dx1dxx/p3
@@ -265,7 +278,8 @@ class M3 (Model):
     """
     def __init__ (self):
         super().__init__('M3')
-        self.p0 = np.array([ 0.12, 0.56, 0.03 ])
+        #self.p0 = np.array([ 0.12, 0.56, 0.03 ])
+        self.p0 = np.array([ 0.5, 0.5, 0.5 ])
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
@@ -328,16 +342,17 @@ class M4 (Model):
     """
     def __init__ (self):
         super().__init__('M4')
-        self.p0 = np.array([ 0.3, 0.3, 0.55, 0.05 ])
+        #self.p0 = np.array([ 0.3, 0.3, 0.55, 0.05 ])
+        self.p0 = np.array([ 0.5, 0.5, 0.5 ])
 
     def __call__ (self, x, u, p, grad=False):
         x1, x2 = x
         u1, u2 = u
-        p1, p2, p3, p4 = p
+        p1, p2, p3 = p
 
         r   = p1*x2 / (p2 + x2)
         dx1 = (r - u1) * x1
-        dx2 = -(r/p3 + p4 )*x1 + u1*(u2 - x2)
+        dx2 = -r*x1/p3 + u1*(u2 - x2)
         dM  = np.array([dx1, dx2])
         if not grad:
             return dM
@@ -345,17 +360,18 @@ class M4 (Model):
         do = LatentStateDerivatives(self)
         
         # Gradients
-        drdx = r * np.array([ 0, 1/x2 - 1./(p2 + x2) ])
-        drdp = np.array([ r/p1, -r/(p2 + x2), 0., 0. ])
+        #drdx = r * np.array([ 0, 1/x2 - 1./(p2 + x2) ])
+        drdx = np.array([ 0, p1/(p2 + x2) - r/(p2 + x2) ])
+        drdp = np.array([ r/p1, -r/(p2 + x2), 0. ])
 
         d1dx = np.array([r-u1, 0]) + x1*drdx 
-        d2dx = np.array([-(r/p3+p4), -u1]) - x1*drdx/p3
+        d2dx = np.array([-r/p3, -u1]) - x1*drdx/p3
 
         d1du = np.array([-x1, 0.])
         d2du = np.array([u2-x2, u1])
 
         d1dp = x1 * drdp
-        d2dp = np.array([0., 0., r*x1/p3**2, -x1]) - drdp*x1/p3 
+        d2dp = np.array([0., 0., r*x1/p3**2]) - drdp*x1/p3 
         
         do.dMdx = np.array([ d1dx, d2dx ])
         do.dMdu = np.array([ d1du, d2du ])
@@ -367,11 +383,13 @@ class M4 (Model):
         drdpp[1,1] = -2 * drdp[1] / (p2 + x2)
         
         drdxx = np.zeros(( self.num_states, self.num_states ))
-        drdxx[1,1] = drdpp[1,1] + 2*drdp[1]/x2
+        #drdxx[1,1] = drdpp[1,1] + 2*drdp[1]/x2
+        drdxx[1,1] = drdpp[1,1] - 2*p1/(p2 + x2)**2
         
         drdxp = np.zeros(( self.num_states, self.num_param ))
         drdxp[1,0] = drdx[1]/p1
-        drdxp[1,1] = drdpp[1,1] + drdp[1]/x2
+        #drdxp[1,1] = drdpp[1,1] + drdp[1]/x2
+        drdxp[1,1] = drdpp[1,1] - p1/(p2 + x2)**2
         
         dx1dxx = np.array([[0., drdx[1]], [drdx[1], x1*drdxx[1,1]]])
         dx2dxx = -dx1dxx/p3
@@ -382,10 +400,10 @@ class M4 (Model):
         dx1dxu = np.array([[-1, 0.], [0., 0.]])
         dx2dxu = np.array([[0., 0.], [-1., 0.]])
         
-        dx1dxp = np.array([ drdp + np.array([0, 0, 0, -1.]), x1 * drdxp[1] ])
+        dx1dxp = np.array([ drdp, x1 * drdxp[1] ])
         dx2dxp = np.zeros(( self.num_states, self.num_param ))
-        dx2dxp[0] = -drdp/p3 + np.array([0, 0, r/p3**2, -1.])
-        dx2dxp[1] = -x1*drdxp[1]/p3 + np.array([0, 0, x1*drdx[1]/p3**2, 0.])
+        dx2dxp[0] = -drdp/p3 + np.array([0, 0, r/p3**2])
+        dx2dxp[1] = -x1*drdxp[1]/p3 + np.array([0, 0, x1*drdx[1]/p3**2])
         
         dx1dpp = x1 * drdpp
         dx2dpp = np.zeros(( self.num_param, self.num_param ))
@@ -406,7 +424,8 @@ class DataGen (M1):
 	def __init__ (self):
 		super().__init__()
 		self.p0     = []
-		self.p_true = np.array([ 0.31, 0.18, 0.55, 0.03 ])
+		#self.p_true = np.array([ 0.31, 0.18, 0.55, 0.03 ])
+		self.p_true = np.array([ 0.25, 0.25, 0.88, 0.09 ])
 
 	def __call__ (self, x, u):
 		return super().__call__(x, u, self.p_true)
