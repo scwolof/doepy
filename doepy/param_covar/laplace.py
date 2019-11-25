@@ -28,7 +28,6 @@ import warnings
 from .state_space import state_space_noise_var, state_space_compute_dZdp
 from ..linalg import squaremul
 
-from pdb import set_trace as st
 
 def _safe_p_covar ( inv_p_covar, diag_min_ratio=0.5, diag_min_thresh_ratio=0.1, 
 	off_diag_abs_max_ratio=0.99, warning_msg=False ):
