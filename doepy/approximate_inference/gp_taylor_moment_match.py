@@ -28,14 +28,15 @@ from .derivatives import Derivatives
 from .gp_derivatives import d_pred_d_x, d2_m_d_x2
 from .taylor_moment_match import taylor_moment_match
 
-def gp_taylor_moment_match (gps, m, s, grad=False):
+def gp_taylor_moment_match (gps, m, s, grad=False, exact_mean=False):
 	E, D  = len(gps), len(m)
 	M, S  = np.zeros(E), np.zeros((E,E))
 	
-	for e, gp in enumerate(gps):
-		tmp    = gp.predict_noiseless(m[None,:])
-		M[e]   = tmp[0][0,0]
-		S[e,e] = tmp[1][0,0]
+	if not exact_mean:
+		for e, gp in enumerate(gps):
+			tmp    = gp.predict_noiseless(m[None,:])
+			M[e]   = tmp[0][0,0]
+			S[e,e] = tmp[1][0,0]
 
 	dMdm, dSdm = d_pred_d_x(gps, m, diag=True)
 	ddM        = None if not grad else d2_m_d_x2(gps, m)

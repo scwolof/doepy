@@ -59,11 +59,13 @@ class ctModel (StateSpaceModel):
 		yk   = np.matmul(self.H, x)
 		return xk1, yk
 
-	def _sample (self, x, u):
+	def _sample (self, x, u, true_observed=False):
 		us = mvn(u, self.u_covar)
 		xy = self.predict(x, us)
 		wk = mvn( np.zeros(self.num_states), self.step_length*self.x_covar )
 		vk = mvn( np.zeros(self.num_meas), self.y_covar )
+		if true_observed:
+			return xy[0] + wk, xy[1]
 		return xy[0] + wk, xy[1] + vk
 	
 	def _ode_mean_var_merge (self, x, S, u):
@@ -177,7 +179,7 @@ class ctModel (StateSpaceModel):
 		
 		return domm
 
-	def _ode_moment_match (self, M, S, grad=False):
+	def _ode_moment_match (self, M, S, grad=False, exact_mean=False):
 		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
 		D = self.num_states + self.num_inputs + self.num_param
 		
@@ -204,10 +206,10 @@ class ctModel (StateSpaceModel):
 
 		return dM, dS, do
 		
-	def _x_dist_ode (self, t, X, grad=False):
+	def _x_dist_ode (self, t, X, grad=False, exact_mean=False):
 		mean, var, do = self._ode_vector_unmerge(X, grad=grad)
 
-		x, S, domm = self._ode_moment_match(mean, var, grad=grad)
+		x, S, domm = self._ode_moment_match(mean, var, grad=grad, exact_mean=exact_mean)
 		
 		if not grad:
 			return self._ode_vector_merge(x, S, do, grad=False)
@@ -231,13 +233,13 @@ class ctModel (StateSpaceModel):
 		do.dSds = dSds
 		return self._ode_vector_merge(x, S, do, grad=True)
 
-	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False, exact_mean=False):
 		if cross_cov:
 			raise NotImplementedError(
 				'Cross covariance not implemented for continuous time models')
 		mean, var = self.get_input_mean_and_cov(xk, Sk, u, concatenate=True)
 
-		ode = lambda t, x: self._x_dist_ode(t, x, grad=grad)
+		ode = lambda t, x: self._x_dist_ode(t, x, grad=grad, exact_mean=exact_mean)
 		X   = self._ode_vector_merge(mean, var, grad=grad)
 		T   = self._get_time_steps()
 		T   = (T[0], T[-1])

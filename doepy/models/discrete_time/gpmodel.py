@@ -63,7 +63,7 @@ class dtGPModel (dtModel, GPModel):
 	"""
 	State prediction
 	"""
-	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False, exact_mean=False):
 		# Input mean and covariance
 		input_mean, input_cov = self.get_input_mean_and_cov(xk, Sk, u, True)
 
@@ -75,15 +75,23 @@ class dtGPModel (dtModel, GPModel):
 
 		# Moment matching
 		assert not self.gps == [], 'GP surrogate(s) not trained yet.'
-		M,S,V,do = self.moment_match(self.gps, input_mean, input_cov, grad=grad)
-				
+		M,S,V,do = self.moment_match(self.gps, input_mean, input_cov, grad=grad, exact_mean=exact_mean)
+
+		if exact_mean:
+			Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
+			input_mean = (xk[:Dx], xk[Dx:(Dx+Du)])
+			if Dp > 0:
+				input_mean += ( xk[(Dx+Du):], )
+			M = self.f(*input_mean)
+
 		# Transform back
 		if self.transform:
 			qt,qz = self.input_transform.q, self.output_transform.q
-			M     = self.output_transform(M, back=True)
-			S     = self.output_transform.cov(S, back=True)
 			qtqz  = qt[:,None] * qz[None,:]
-			V    *= qtqz
+			if not exact_mean:
+				M  = self.output_transform(M, back=True)
+				S  = self.output_transform.cov(S, back=True)
+				V *= qtqz
 			if grad:
 				qtqt  = qt[:,None] * qt[None,:]
 				qzqz  = qz[:,None] * qz[None,:]

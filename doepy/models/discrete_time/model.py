@@ -53,17 +53,19 @@ class dtModel (StateSpaceModel):
 		yk   = np.matmul(self.H, x)
 		return xk1, yk
 
-	def _sample (self, x, u):
+	def _sample (self, x, u, true_observed=False):
 		us = mvn(u, self.u_covar)
 		xy = self.predict(x, us)
 		wk = mvn( np.zeros(self.num_states), self.x_covar )
 		vk = mvn( np.zeros(self.num_meas), self.y_covar )
+		if true_observed:
+			return xy[0] + wk, xy[1]
 		return xy[0] + wk, xy[1] + vk
 
 	"""
 	State prediction
 	"""
-	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False, exact_mean=False):
 		# Input mean and covariance
 		input_mean, input_cov = self.get_input_mean_and_cov(xk, Sk, u)
 

@@ -56,7 +56,7 @@ class ctGPModel (ctModel, GPModel):
 	"""
 	State prediction
 	"""
-	def _ode_moment_match (self, M, S, grad=False):
+	def _ode_moment_match (self, M, S, grad=False, exact_mean=False):
 		if self.transform:
 			assert_not_none(self.output_transform, 'output_transform')
 			assert_not_none(self.input_transform, 'input_transform')
@@ -65,27 +65,37 @@ class ctGPModel (ctModel, GPModel):
 		Dx, Du, Dp = self.num_states, self.num_inputs, self.num_param
 		E = self.num_states + self.num_inputs + self.num_param
 		dm, ds  = np.zeros( Dx ), np.zeros(( Dx, Dx ))
-		for e, gp in enumerate(self.gps):
-			tmp     = gp.predict_noiseless(input_mean[None,:])
-			dm[e]   = tmp[0][0,0]
-			ds[e,e] = tmp[1][0,0]
 			
 		dMdx, dSdx = d_pred_d_x(self.gps, input_mean, diag=True)
 		if grad:
 			dMdxx = d2_m_d_x2(self.gps, input_mean)
+		
+		if exact_mean:
+			input_mean = (M[:Dx], M[Dx:(Dx+Du)])
+			if Dp > 0:
+				input_mean += ( M[(Dx+Du):], )
+			dm = self.f(*input_mean)
+		else:
+			for e, gp in enumerate(self.gps):
+				tmp     = gp.predict_noiseless(input_mean[None,:])
+				dm[e]   = tmp[0][0,0]
+				ds[e,e] = tmp[1][0,0]
 
 		# Transform back
 		if self.transform:
 			qt,qz = self.input_transform.q, self.output_transform.q
-			dm    = self.output_transform(dm, back=True)
-			ds    = self.output_transform.cov(ds, back=True)
+			### 
+			if not exact_mean:
+				dm = self.output_transform(dm, back=True)
+				ds = self.output_transform.cov(ds, back=True)
+			###
 			qtqt  = qt[:,None] * qt[None,:]
 			qzqz  = qz[:,None] * qz[None,:]
 			dMdx *= qz[:,None] / qt[None,:]
 			if grad:
 				dSdx  *= qzqz[:,:,None] / qt[None,None,:]
 				dMdxx *= qz[:,None,None] / qtqt[None,:,:]
-				
+
 		do = Derivatives(E, num_states=E)
 		do.dMdx = np.zeros((E, E))
 		do.dMdx[:Dx] = dMdx

@@ -202,7 +202,7 @@ class StateSpaceModel (Model):
 	def _predict (self, x0, u, **kwargs):
 		raise NotImplementedError
 
-	def sample (self, x0, U, initial_uncertainty=False):
+	def sample (self, x0, U, initial_uncertainty=False, true_observed=False):
 		"""
 		Stochastic model simulation
 			x_{k+1} = f( x_k, u_k ) + w_k
@@ -216,7 +216,7 @@ class StateSpaceModel (Model):
 		x0 = x0 if not initial_uncertainty else mvn(x0, self.x0_covar)
 
 		if U.ndim == 1:
-			return self._sample(x0, U)
+			return self._sample(x0, U, true_observed=true_observed)
 
 		n = len(U)
 		X = np.zeros(( n+1, self.num_states ))
@@ -224,10 +224,10 @@ class StateSpaceModel (Model):
 
 		X[0] = x0
 		for k in range(n):
-			X[k+1], Y[k] = self._sample(X[k], U[k])
+			X[k+1], Y[k] = self._sample(X[k], U[k], true_observed=true_observed)
 		return X, Y
 
-	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False):
+	def predict_x_dist (self, xk, Sk, U, cross_cov=False, grad=False, exact_mean=False):
 		"""
 		Input state posterior mean xk and variance Sk, and controls U 
 			p( x_k | y_{1 : k} ) = N( xk, Sk )
@@ -238,7 +238,7 @@ class StateSpaceModel (Model):
 		If U.ndim == 2, multi-step prediction
 		"""
 		if U.ndim == 1:
-			return self._predict_x_dist(xk, Sk, U, cross_cov=cross_cov, grad=grad)
+			return self._predict_x_dist(xk, Sk, U, cross_cov=cross_cov, grad=grad, exact_mean=exact_mean)
 
 		n = len(U)
 		X = np.zeros(( n+1, self.num_states ))
@@ -248,16 +248,16 @@ class StateSpaceModel (Model):
 		S[0] = Sk
 		if not grad:
 			for k in range(n):
-				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k])
+				X[k+1], S[k+1] = self._predict_x_dist(X[k], S[k], U[k], exact_mean=exact_mean)
 			return X, S
 
 		do = LatentStateDerivatives(self, num_test_points=n)
 		for k in range(n):
-			X[k], S[k], dok = self._predict_x_dist(X[k], S[k], U[k], grad=True)
+			X[k], S[k], dok = self._predict_x_dist(X[k], S[k], U[k], grad=True, exact_mean=exact_mean)
 			do.insert(dok,k)
 		return X, S, do
 
-	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False, exact_mean=False):
 		# Implemented in children classes
 		raise NotImplementedError
 
@@ -354,7 +354,7 @@ class StateSpaceModel (Model):
 		sk = s - np.matmul(K, sH.T)
 		return xk, sk
 
-	def predict_filter (self, Y, x0, x0_covar, U):
+	def predict_filter (self, Y, x0, x0_covar, U, exact_mean=False):
 		"""
 		Filter sequence, based on observations Y, controls U,
 		and with prediction p(x_1) ~ N(x0, x0_covar)
@@ -375,7 +375,7 @@ class StateSpaceModel (Model):
 		for k in range( n ):
 			x[k], s[k] = self._filter(Y[k], M, S)
 			if k < n-1:
-				M, S = self.predict_x_dist(x[k], s[k], U[k])
+				M, S = self.predict_x_dist(x[k], s[k], U[k], exact_mean=exact_mean)
 		return x, s
 
 	def smooth (self, X, S, U):

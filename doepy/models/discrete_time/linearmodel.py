@@ -74,7 +74,7 @@ class dtLinearModel (dtModel):
 	"""
 	State prediction
 	"""
-	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False):
+	def _predict_x_dist (self, xk, Sk, u, cross_cov=False, grad=False, exact_mean=False):
 		M = np.matmul(self.F, xk) + np.matmul(self.B, u)
 		V = np.matmul(Sk, self.F.T)
 		S = np.matmul(self.u_covar, self.B.T)
