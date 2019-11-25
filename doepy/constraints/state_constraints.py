@@ -129,7 +129,7 @@ class SingleChanceStateConstraint (StateConstraint):
         P( \mu_i(t) + alpha * S <= bounds[i,1] ) > conf
         P( \mu_i(t) - alpha * S >= bounds[i,1] ) > conf
     """   
-    def __init__ (self, bounds, conf=0.95):
+    def __init__ (self, bounds, conf=0.99):
         super().__init__ (bounds)
         assert self.bounds.ndim == 2
         self.conf  = conf
