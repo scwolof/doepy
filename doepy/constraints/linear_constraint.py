@@ -28,6 +28,22 @@ from scipy.linalg import block_diag
 from ..utils import assert_is_instance, assert_is_shape
 
 
+def _verify_A_and_b (A, b):
+    assert_is_instance(A, np.ndarray, 'A')
+    assert_is_instance(b, np.ndarray, 'b')
+
+    if A.ndim == 1:
+        A = A.reshape((1,-1))
+    assert A.ndim == 2, 'A must be 2D numpy array. Given shape %s'%A.shape
+    n = A.shape[0]
+
+    if b.ndim > 1:
+        b = b.flatten()
+    assert_is_shape(b, (n,))
+
+    return A, b
+
+
 class LinearConstraint:
     """
     Class for linear constraints of the type
@@ -48,21 +64,12 @@ class LinearConstraint:
             A   [ n, d ] numpy.ndarray
             b   [ n, ] numpy.ndarray
         """
+        A, b   = _verify_A_and_b(A, b)
         self.A = A
         self.b = b
 
-        assert_is_instance(self.A, np.ndarray, 'A')
-        assert_is_instance(self.b, np.ndarray, 'b')
-
-        if self.A.ndim == 1:
-            self.A = self.A.reshape((1,-1))
-        assert self.A.ndim == 2, 'A must be 2D numpy array. Given shape %s'%A.shape
         self.n = self.A.shape[0]
         self.d = self.A.shape[1]
-
-        if self.b.ndim > 1:
-            self.b = self.b.flatten()
-        assert_is_shape(b, (self.n,))
 
 
     def __call__ (self, m, grad=False):
@@ -87,13 +94,13 @@ class LinearConstraint:
             # 1D input m
             assert_is_shape(m, (self.d,))
 
-            c  = np.matmul(self.A, m) - self.b
+            c = np.matmul(self.A, m) - self.b
             if grad:
                 dc = self.A
         else:
             # 2D input m
             assert_is_shape(m, (-1, self.d))
-            c  = np.matmul(m, self.A.T) - self.b
+            c = np.matmul(m, self.A.T) - self.b
             if grad:
                 dc = np.array([self.A for _ in m])
         
