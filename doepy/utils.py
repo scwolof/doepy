@@ -71,7 +71,7 @@ def assert_pos_def (A):
         raise AssertionError('Matrix not positive definite')
 
 
-def assert_is_shape (A, shape):
+def assert_is_shape (A, shape, name='<variable_name>'):
     """
     Check that the input numpy array has given shape.
     If not, throw error.
@@ -86,7 +86,8 @@ def assert_is_shape (A, shape):
     if not isinstance(shape, (list,tuple)):
         raise ValueError('Input 2 must be list or tuple, not %s'%type(shape))
     if len(A.shape) != len(shape):
-        raise AssertionError('Array shape mismatch: %s != %s'%(A.shape, shape))
+        raise AssertionError("Array '%s' shape mismatch: %s != %s"%(
+            name, A.shape, shape))
 
     # Allow -1 to just copy corresponding dimension in A
     shape_copy = []
@@ -98,7 +99,8 @@ def assert_is_shape (A, shape):
     shape = tuple(shape_copy)
 
     if A.shape != shape:
-        raise AssertionError('Array shape mismatch: %s != %s'%(A.shape, shape))
+        raise AssertionError("Array '%s' shape mismatch: %s != %s"%(
+            name, A.shape, shape))
 
 
 def assert_equal_shape (array1, array2):
@@ -138,7 +140,7 @@ def assert_is_instance (variable, dtype, name='<variable_name>'):
 
     Inputs:
         variable    Variable to check
-        dtype       Data type (e.g. int or float)
+        dtype       Data type (e.g. int or float) or list of data types
         name        (str, optional) name of variable used for error message
                     (Default: '<variable_name>')
     """
@@ -146,4 +148,3 @@ def assert_is_instance (variable, dtype, name='<variable_name>'):
         raise ValueError('dtype must not be None')
     if not isinstance(variable, dtype):
         raise AssertionError('%s must be of type %s: %s'%(name, dtype, variable))
-                    
