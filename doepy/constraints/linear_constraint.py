@@ -29,135 +29,133 @@ from ..utils import assert_is_instance, assert_is_shape
 
 
 class LinearConstraint:
-	"""
-	Class for linear constraints of the type
-		A * m - b >= 0
+    """
+    Class for linear constraints of the type
+        A * m - b >= 0
 
-	Attributes:
-		A 	[ n, d ] numpy.ndarray
-		b 	[ n, ] numpy.ndarray
-		n 	(int) number of constraints
-		d 	(int) dimensionality
-	"""
+    Attributes:
+        A   [ n, d ] numpy.ndarray
+        b   [ n, ] numpy.ndarray
+        n   (int) number of constraints
+        d   (int) dimensionality
+    """
 
-	def __init__ (self, A, b):
-		"""
-		Initialise linear constraints object
+    def __init__ (self, A, b):
+        """
+        Initialise linear constraints object
 
-		Inputs:
-			A 	[ n, d ] numpy.ndarray
-			b 	[ n, ] numpy.ndarray
-		"""
-		self.A = A
-		self.b = b
+        Inputs:
+            A   [ n, d ] numpy.ndarray
+            b   [ n, ] numpy.ndarray
+        """
+        self.A = A
+        self.b = b
 
-		assert_is_instance(self.A, np.ndarray, 'A')
-		assert_is_instance(self.b, np.ndarray, 'b')
+        assert_is_instance(self.A, np.ndarray, 'A')
+        assert_is_instance(self.b, np.ndarray, 'b')
 
-		if self.A.ndim == 1:
-			self.A = self.A.reshape((1,-1))
-		assert self.A.ndim == 2, 'A must be 2D numpy array. Given shape %s'%A.shape
-		self.n = self.A.shape[0]
-		self.d = self.A.shape[1]
+        if self.A.ndim == 1:
+            self.A = self.A.reshape((1,-1))
+        assert self.A.ndim == 2, 'A must be 2D numpy array. Given shape %s'%A.shape
+        self.n = self.A.shape[0]
+        self.d = self.A.shape[1]
 
-		if self.b.ndim > 1:
-			self.b = self.b.flatten()
-		assert_is_shape(b, (self.n,))
-
-
-	def __call__ (self, m, grad=False):
-		"""
-		Evaluate linear constraint
-			A * m - b >= 0
-
-		Computes A * m - b. Negative elements in the result indicate the
-		constraint is violated.
-
-		Inputs:
-			m 		[ (N), d ] numpy.ndarray, evaluation point
-			grad 	(boolean, optional) return gradients
-
-		Returns:
-			c 		[ (N), n ] numpy.ndarray, constraint c = A * m - b
-			dc 		(if grad) [ (N), n, d ] derivatives d c / d m
-		"""
-		assert_is_instance(m, np.ndarray, 'input')
-		if m.ndim > 2:
-			raise ValueError('input must be 1D or 2D array, got %s'%m.shape)
-
-		if m.ndim == 1:
-			# 1D input m
-			assert_is_shape(m, (self.d,))
-
-			c  = np.matmul(self.A, m) - self.b
-			if grad:
-				dc = self.A
-		else:
-			# 2D input m
-			assert_is_shape(m, (-1, self.d))
-			c  = np.matmul(m, self.A.T) - self.b
-			if grad:
-				dc = np.array([self.A for _ in m])
-		
-		return c if not grad else (c, dc)
+        if self.b.ndim > 1:
+            self.b = self.b.flatten()
+        assert_is_shape(b, (self.n,))
 
 
-	def num_constraint (self):
-		"""
-		Returns:
-			(int) number of constraints
-		"""
-		return self.n
+    def __call__ (self, m, grad=False):
+        """
+        Evaluate linear constraint equations
+            c = A * m - b
+        Constraint violations result in negative elements in c.
+
+        Inputs:
+            m       [ (N), d ] numpy.ndarray, evaluation point
+            grad    (boolean, optional) return gradients
+
+        Returns:
+            c       [ (N), n ] numpy.ndarray, constraint c = A * m - b
+            dc      (if grad) [ (N), n, d ] derivatives d c / d m
+        """
+        assert_is_instance(m, np.ndarray, 'input')
+        if m.ndim > 2:
+            raise ValueError('input must be 1D or 2D array, got %s'%m.shape)
+
+        if m.ndim == 1:
+            # 1D input m
+            assert_is_shape(m, (self.d,))
+
+            c  = np.matmul(self.A, m) - self.b
+            if grad:
+                dc = self.A
+        else:
+            # 2D input m
+            assert_is_shape(m, (-1, self.d))
+            c  = np.matmul(m, self.A.T) - self.b
+            if grad:
+                dc = np.array([self.A for _ in m])
+        
+        return c if not grad else (c, dc)
 
 
-	def __add__ (self, l2):
-		"""
-		Add linear constraints together to create new LinearConstraint object
-		of dimensionality [n1+...+nn, d]
-
-			A1 * x - b1 >= 0 	(n1 constraints)
-			...
-		+   An * x - bn >= 0	(nn constraints)
-		--------------------------------------------
-			|  A1 |       |  b1 |
-		=	| ... | * x - | ... |  >= 0    (n1 + ... + nn constraints)
-			|  An |       |  bn |
-
-		Inputs:
-			l2 		LinearConstraint object
-
-		Returns:
-			Combined LinearConstraint object
-		"""
-		if isinstance(l2, int):
-			return self
-		assert_is_instance(l2, LinearConstraint, 'l2')
-		assert self.d == l2.d, 'Dimensions must match: %d != %d' %(self.d, l2.d)
-
-		A = np.vstack((self.A, l2.A))
-		b = np.concatenate((self.b, l2.b))
-		return LinearConstraint(A, b)
+    def num_constraint (self):
+        """
+        Returns:
+            (int) number of constraints
+        """
+        return self.n
 
 
-	def __radd__ (self, l2):
-		return self.__add__(l2)
+    def __add__ (self, l2):
+        """
+        Add linear constraints together to create new LinearConstraint object
+        of dimensionality [n1+...+nn, d]
+
+            A1 * x - b1 >= 0    (n1 constraints)
+            ...
+        +   An * x - bn >= 0    (nn constraints)
+        --------------------------------------------
+            |  A1 |       |  b1 |
+        =   | ... | * x - | ... |  >= 0    (n1 + ... + nn constraints)
+            |  An |       |  bn |
+
+        Inputs:
+            l2      LinearConstraint object
+
+        Returns:
+            Combined LinearConstraint object
+        """
+        if isinstance(l2, int):
+            return self
+        assert_is_instance(l2, LinearConstraint, 'l2')
+        assert self.d == l2.d, 'Dimensions must match: %d != %d' %(self.d, l2.d)
+
+        A = np.vstack((self.A, l2.A))
+        b = np.concatenate((self.b, l2.b))
+        return LinearConstraint(A, b)
 
 
-	def __mul__ (self, N):
-		"""
-		Repeat the constraint N times, to create a new LinearConstraint object
-		of dimensionality [N*n, N*d]
+    def __radd__ (self, l2):
+        return self.__add__(l2)
 
-			A * x - b1 >= 0 	(n constraints)
-		*   N
-		--------------------------------------------
-			|  A   0  ... |       |  b  |
-		=	|  0   A  ... | * x - | ... |  >= 0    ( n * N constraints)
-			| ... ...  A  |       |  b  |
-		
-		"""
-		assert_is_instance(N, int, 'N')
 
-		A = block_diag(*([ self.A ] * N))
-		b = np.concatenate([ self.b ] * N)
-		return LinearConstraint(A, b)
+    def __mul__ (self, N):
+        """
+        Repeat the constraint N times, to create a new LinearConstraint object
+        of dimensionality [N*n, N*d]
+
+            A * x - b1 >= 0     (n constraints)
+        *   N
+        --------------------------------------------
+            |  A   0  ... |       |  b  |
+        =   |  0   A  ... | * x - | ... |  >= 0    ( N*n constraints)
+            | ... ...  A  |       |  b  |
+        
+        """
+        assert_is_instance(N, int, 'N')
+
+        A = block_diag(*([ self.A ] * N))
+        b = np.concatenate([ self.b ] * N)
+        return LinearConstraint(A, b)
