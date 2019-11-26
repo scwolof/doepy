@@ -147,4 +147,5 @@ def assert_is_instance (variable, dtype, name='<variable_name>'):
     if dtype is None:
         raise ValueError('dtype must not be None')
     if not isinstance(variable, dtype):
-        raise AssertionError('%s must be of type %s: %s'%(name, dtype, variable))
+        raise AssertionError('%s must be of type %s, got %s'%(
+            name, dtype, type(variable)))
