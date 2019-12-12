@@ -187,6 +187,41 @@ class BF (DesignCriterion):
 		return dc if not grad else (dc, dcdM, dcdS)
 
 
+class CA (DesignCriterion):
+	"""
+	Chen & Asprey's design criterion.
+
+	- Chen and Asprey (2003)
+	    On the design of optimally informative dynamic experiments for
+	    model discrimination in multiresponse nonlinear situations
+	    Ind. Eng. Chem. Res. 42:1379-1390
+	"""
+	def __init__ (self, noise_var):
+		DesignCriterion.__init__(self)
+		self.noise_var = noise_var
+
+	def _criterion (self, M, S, grad=False):
+		num_models, num_meas = M.shape
+		if grad:
+			dcdM = np.zeros((num_models, num_meas))
+			dcdS = np.zeros((num_models, num_meas, num_meas))
+
+		dc = 0
+		for i in range( num_models - 1 ):
+			for j in range( i+1, num_models ):
+				iS  = np.linalg.inv(self.noise_var + S[i] + S[j])
+				m   = M[i] - M[j]
+				Wm  = np.matmul(iS, m)
+				dc += np.sum(m * Wm )
+				if grad:
+					dcdM[i] += 2 * Wm
+					dcdM[j] -= 2 * Wm
+					dS = np.matmul(np.matmul(iS.T, m[:,None]*m[None,:]), iS.T)
+					dcdS[i] -= dS
+					dcdS[j] -= dS
+		return dc if not grad else (dc, dcdM, dcdS)
+
+
 class AW (DesignCriterion):
 	"""
 	Modified Expected Akaike Weights Decision Criterion.
