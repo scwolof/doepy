@@ -38,7 +38,7 @@ def assert_square_matrix (A):
     if not A.ndim == 2:
         raise AssertionError('Input must be 2D matrix, not %dD'%A.ndim)
     if not A.shape == (A.shape[0], A.shape[0]):
-        raise AssertionError('Input not square matrix, shape=(%s,%s)'%A.shape)
+        raise AssertionError('Input not square matrix, shape=%s'%A.shape)
 
 
 def assert_symmetric_matrix (A):
@@ -86,7 +86,7 @@ def assert_is_shape (A, shape, name='<variable_name>'):
     if not isinstance(shape, (list,tuple)):
         raise ValueError('Input 2 must be list or tuple, not %s'%type(shape))
     if len(A.shape) != len(shape):
-        raise AssertionError("Array '%s' shape mismatch: %s != %s"%(
+        raise AssertionError("Array '%s' shape mismatch: got %s, expected %s"%(
             name, A.shape, shape))
 
     # Allow -1 to just copy corresponding dimension in A
@@ -99,7 +99,7 @@ def assert_is_shape (A, shape, name='<variable_name>'):
     shape = tuple(shape_copy)
 
     if A.shape != shape:
-        raise AssertionError("Array '%s' shape mismatch: %s != %s"%(
+        raise AssertionError("Array '%s' shape mismatch: got %s, expected %s"%(
             name, A.shape, shape))
 
 
