@@ -104,6 +104,6 @@ class CandidateWrapper:
 		## Continuous-time state space models
 		######################################
 		# Time between measurements
-		assign_variable('step_length', float)
+		assign_variable('step_length', (int,float))
 		# Num time segments in [0, step_length] for ODE solver
 		assign_variable('time_steps', int)
